@@ -13,7 +13,7 @@ const HISTORY_CAP = 200;
 const NAMES_CAP = 24;
 const EXPORT_VERSION = 1;
 
-const nameKey = n => String(n).trim().toLocaleLowerCase('tr-TR');
+const normName = n => String(n).trim().toLocaleLowerCase('tr-TR');
 
 export function createStore(storage) {
   function read(key, fallback) {
@@ -78,9 +78,9 @@ export function createStore(storage) {
     rememberNames(names) {
       const incoming = names.map(n => String(n).trim()).filter(Boolean);
       const unique = [];
-      for (const n of incoming) if (!unique.some(u => nameKey(u) === nameKey(n))) unique.push(n);
-      const seen = new Set(unique.map(nameKey));
-      const rest = loadNames().filter(n => !seen.has(nameKey(n)));
+      for (const n of incoming) if (!unique.some(u => normName(u) === normName(n))) unique.push(n);
+      const seen = new Set(unique.map(normName));
+      const rest = loadNames().filter(n => !seen.has(normName(n)));
       return write(KEYS.names, [...unique, ...rest].slice(0, NAMES_CAP));
     },
     wipeAll() { for (const k of Object.values(KEYS)) write(k, null); },

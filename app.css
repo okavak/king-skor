@@ -29,6 +29,7 @@
     --line: rgba(255, 255, 255, .09); --gold: #E9B949; --gold-ink: #1B2236; --gold-soft: rgba(233, 185, 73, .14);
     --red: #F0565E; --red-soft: rgba(240, 86, 94, .14); --card: #FBF8F0; --card-ink: #1B2236; --card-red: #C8323A;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35); --toast-bg: #F2EFE6; --toast-ink: #1B2236;
+    color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
@@ -36,6 +37,7 @@
   --line: rgba(255, 255, 255, .09); --gold: #E9B949; --gold-ink: #1B2236; --gold-soft: rgba(233, 185, 73, .14);
   --red: #F0565E; --red-soft: rgba(240, 86, 94, .14); --card: #FBF8F0; --card-ink: #1B2236; --card-red: #C8323A;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35); --toast-bg: #F2EFE6; --toast-ink: #1B2236;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -218,6 +220,13 @@ input { font: inherit; color: inherit; }
 .table th:first-child, .table td:first-child { text-align: left; }
 .table td { text-align: right; padding: 10px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .table tr:last-child td { border-bottom: 0; }
+
+/* onay diyaloğu */
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(10, 14, 28, .55); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 40; animation: fade .15s ease; }
+.dialog { background: var(--surface); color: var(--ink); border-radius: 16px; box-shadow: var(--shadow); width: min(100%, 360px); padding: 20px 18px 14px; display: flex; flex-direction: column; gap: 14px; }
+.dialog p { margin: 0; font-size: 16px; line-height: 1.45; }
+.dialog .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dialog .actions .btn { min-height: 46px; font-size: 16px; }
 
 #toast-root { position: fixed; left: 16px; right: 16px; bottom: calc(110px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; z-index: 50; }
 .toast { pointer-events: auto; background: var(--toast-bg); color: var(--toast-ink); padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 500; box-shadow: var(--shadow); display: flex; gap: 12px; align-items: center; max-width: 480px; }

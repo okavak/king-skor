@@ -41,6 +41,7 @@ const state = {
 const $app = document.getElementById('app');
 const $sheetRoot = document.getElementById('sheet-root');
 const $toastRoot = document.getElementById('toast-root');
+const $dialogRoot = document.getElementById('dialog-root');
 
 // ---------- yardımcılar ----------
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -66,11 +67,29 @@ function rights(game, seat) {
 }
 
 function toast(msg, opts = {}) {
+  $toastRoot.querySelectorAll('.toast:not(.sticky)').forEach(t => t.remove()); // aynı anda tek bildirim
   const el = document.createElement('div');
-  el.className = 'toast';
+  el.className = opts.sticky ? 'toast sticky' : 'toast';
   el.innerHTML = `<span>${esc(msg)}</span>${opts.label ? `<button data-action="${esc(opts.action)}">${esc(opts.label)}</button>` : ''}`;
   $toastRoot.appendChild(el);
   setTimeout(() => el.remove(), opts.sticky ? 20000 : 2600);
+}
+
+let closeDialog = null;
+function ask(message, { okLabel = 'Evet', danger = false } = {}) {
+  return new Promise(resolve => {
+    closeDialog = value => { $dialogRoot.innerHTML = ''; closeDialog = null; resolve(value); };
+    $dialogRoot.innerHTML = `<div class="dialog-backdrop"><div class="dialog" role="alertdialog" aria-modal="true" aria-label="Onay">
+      <p>${esc(message)}</p>
+      <div class="actions"><button class="btn" data-dialog="no">Vazgeç</button><button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-dialog="yes">${esc(okLabel)}</button></div>
+    </div></div>`;
+    $dialogRoot.onclick = e => {
+      const b = e.target.closest('[data-dialog]');
+      if (b) closeDialog(b.dataset.dialog === 'yes');
+      else if (e.target.classList.contains('dialog-backdrop')) closeDialog(false);
+    };
+    $dialogRoot.querySelector('[data-dialog="yes"]').focus();
+  });
 }
 
 function setView(view) {
@@ -191,11 +210,11 @@ Object.assign(actions, {
     render();
     toast(`${state.draft.names[state.draft.firstDealer].trim() || `${state.draft.firstDealer + 1}. oyuncu`} dağıtıyor`);
   },
-  'start-game'() {
+  async 'start-game'() {
     const names = state.draft.names.map(n => n.trim());
     if (names.some(n => !n)) return toast('Dört oyuncunun da adını yazın');
     if (new Set(names.map(lower)).size !== PLAYER_COUNT) return toast('İsimler birbirinden farklı olmalı');
-    if (state.game && !confirm('Devam eden bir oyun var. Onu bitmiş sayıp geçmişe kaldıralım mı?')) return;
+    if (state.game && !(await ask('Devam eden bir oyun var. Onu bitmiş sayıp geçmişe kaldıralım mı?', { okLabel: 'Geçmişe kaldır' }))) return;
     if (state.game) archive(state.game);
     state.game = createGame({ players: names, firstDealer: state.draft.firstDealer, rules: store.loadSettings() });
     store.rememberNames(names);
@@ -219,6 +238,7 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && closeDialog) { closeDialog(false); return; }
   if (e.key === 'Escape' && state.sheet) { actions['sheet-close']?.(); return; }
   if (e.key === 'Enter' && e.target.dataset?.field === 'name') {
     const next = document.getElementById(`name-${Number(e.target.dataset.index) + 1}`);
@@ -463,18 +483,19 @@ Object.assign(actions, {
     state.sheet = { step: 'counts', type: h.type, counts: [...h.counts], trumpSuit: h.trumpSuit || null, editIndex: Number(index) };
     render();
   },
-  'delete-hand'({ index }) {
-    if (!confirm(`${Number(index) + 1}. el silinsin mi? Sonraki eller bir sıra öne kayar.`)) return;
+  async 'delete-hand'({ index }) {
+    if (!(await ask(`${Number(index) + 1}. el silinsin mi? Sonraki eller bir sıra öne kayar.`, { okLabel: 'Eli sil', danger: true }))) return;
     state.game = withoutHand(state.game, Number(index));
     state.sheet = null;
     persist();
     render();
     toast('El silindi');
   },
-  'undo-last'() {
+  async 'undo-last'() {
     state.menuOpen = false;
+    render();
     const n = state.game.hands.length;
-    if (!n || !confirm(`Son el (${n}.) silinsin mi?`)) return render();
+    if (!n || !(await ask(`Son el (${n}.) silinsin mi?`, { okLabel: 'Son eli sil', danger: true }))) return;
     state.game = withoutHand(state.game, n - 1);
     persist();
     render();
@@ -482,14 +503,16 @@ Object.assign(actions, {
   },
   'menu-toggle'() { state.menuOpen = !state.menuOpen; render(); },
   'menu-close'() { state.menuOpen = false; render(); },
-  'finish-early'() {
+  async 'finish-early'() {
     state.menuOpen = false;
-    if (!confirm('Oyun şimdi bitirilsin mi? Kalan eller oynanmamış sayılır.')) return render();
+    render();
+    if (!(await ask('Oyun şimdi bitirilsin mi? Kalan eller oynanmamış sayılır.', { okLabel: 'Oyunu bitir' }))) return;
     finishGame(state.game);
   },
-  abandon() {
+  async abandon() {
     state.menuOpen = false;
-    if (!confirm('Bu oyun tamamen silinsin mi? Skorlar geçmişe kaydedilmez.')) return render();
+    render();
+    if (!(await ask('Bu oyun tamamen silinsin mi? Skorlar geçmişe kaydedilmez.', { okLabel: 'Oyunu sil', danger: true }))) return;
     state.game = null;
     store.clearCurrent();
     setView('home');
@@ -503,9 +526,10 @@ Object.assign(actions, {
     state.boardMode = 'detail';
     setView('board');
   },
-  'delete-history'({ id }) {
+  async 'delete-history'({ id }) {
     state.menuOpen = false;
-    if (!confirm('Bu oyun geçmişten silinsin mi?')) return render();
+    render();
+    if (!(await ask('Bu oyun geçmişten silinsin mi?', { okLabel: 'Sil', danger: true }))) return;
     store.removeFromHistory(id);
     state.viewGame = null;
     setView('home');
@@ -609,8 +633,8 @@ Object.assign(actions, {
   },
   'settings-reset'() { state.settings = cloneRules(DEFAULT_RULES); render(); toast('Varsayılanlar yüklendi, kaydetmeyi unutmayın'); },
   export() { exportBackup(); },
-  wipe() {
-    if (!confirm('Tüm oyunlar, geçmiş ve ayarlar silinsin mi? Bu işlem geri alınamaz.')) return;
+  async wipe() {
+    if (!(await ask('Tüm oyunlar, geçmiş ve ayarlar silinsin mi? Bu işlem geri alınamaz.', { okLabel: 'Hepsini sil', danger: true }))) return;
     store.wipeAll();
     state.game = null;
     state.settings = null;
@@ -626,7 +650,7 @@ document.addEventListener('change', async e => {
   el.value = '';
   if (!file) return;
   const text = await file.text();
-  if (!confirm('Bu cihazdaki tüm veriler yedektekilerle değiştirilecek. Devam edilsin mi?')) return;
+  if (!(await ask('Bu cihazdaki tüm veriler yedektekilerle değiştirilecek. Devam edilsin mi?', { okLabel: 'Geri yükle', danger: true }))) return;
   const r = store.importAll(text);
   if (!r.ok) return toast(r.error);
   state.game = store.loadCurrent();
