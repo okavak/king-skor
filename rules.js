@@ -144,3 +144,78 @@ export function availableTypes(game, dealer, { handIndex = game.hands.length, ex
 export function isFinished(game) {
   return game.hands.length >= handsTotal(game.rules);
 }
+
+export function standings(game) {
+  const totals = gameTotals(game);
+  const sorted = totals.map((total, seat) => ({ seat, total, rank: 0 })).sort((a, b) => b.total - a.total || a.seat - b.seat);
+  let rank = 0;
+  let prev = null;
+  sorted.forEach((s, i) => {
+    if (s.total !== prev) { rank = i + 1; prev = s.total; }
+    s.rank = rank;
+  });
+  return sorted;
+}
+
+export function summaryText(game) {
+  const st = standings(game);
+  const date = new Date(game.finishedAt || game.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const lines = st.map(s => `${s.rank}. ${game.players[s.seat]}: ${formatPoints(s.total)}`);
+  return `King skoru, ${date} (${game.hands.length} el)\n${lines.join('\n')}`;
+}
+
+export function speechText(game) {
+  const totals = gameTotals(game);
+  return game.players.map((name, i) => `${name} ${totals[i] < 0 ? 'eksi ' : ''}${Math.abs(totals[i])}.`).join(' ');
+}
+
+function nameKey(name) {
+  return String(name).trim().toLocaleLowerCase('tr-TR');
+}
+
+function titleCase(name) {
+  const s = String(name).trim();
+  return s.charAt(0).toLocaleUpperCase('tr-TR') + s.slice(1).toLocaleLowerCase('tr-TR');
+}
+
+export function playerStats(games) {
+  const map = new Map();
+  for (const g of games) {
+    if (!isValidGame(g)) continue;
+    const totals = gameTotals(g);
+    const winners = new Set(standings(g).filter(s => s.rank === 1).map(s => s.seat));
+    const threshold = g.rules.kingThreshold ?? DEFAULT_RULES.kingThreshold;
+    g.players.forEach((name, seat) => {
+      const key = nameKey(name);
+      const p = map.get(key) || { name: titleCase(name), games: 0, wins: 0, sum: 0, best: -Infinity, worst: Infinity, kings: 0 };
+      p.games += 1;
+      if (winners.has(seat)) p.wins += 1;
+      p.sum += totals[seat];
+      p.best = Math.max(p.best, totals[seat]);
+      p.worst = Math.min(p.worst, totals[seat]);
+      p.kings += g.hands.filter(h => h.type === 'koz' && h.counts[seat] >= threshold).length;
+      map.set(key, p);
+    });
+  }
+  return [...map.values()]
+    .map(({ sum, ...p }) => ({ ...p, avgTotal: Math.round(sum / p.games) }))
+    .sort((a, b) => b.wins - a.wins || b.avgTotal - a.avgTotal || a.name.localeCompare(b.name, 'tr-TR'));
+}
+
+export function expectedGameTotal(rules) {
+  let cezaSet = 0;
+  for (const t of HAND_TYPES) if (t.ceza) cezaSet += t.total * rules.pointsPer[t.id];
+  return rules.maxPerCezaType * cezaSet + PLAYER_COUNT * rules.kozPerPlayer * TYPE_BY_ID.koz.total * rules.pointsPer.koz;
+}
+
+export function isValidGame(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  if (!Array.isArray(obj.players) || obj.players.length !== PLAYER_COUNT) return false;
+  if (!obj.players.every(p => typeof p === 'string')) return false;
+  if (!Number.isInteger(obj.firstDealer) || obj.firstDealer < 0 || obj.firstDealer >= PLAYER_COUNT) return false;
+  if (!obj.rules || typeof obj.rules.pointsPer !== 'object') return false;
+  if (!Array.isArray(obj.hands)) return false;
+  return obj.hands.every(h => h && TYPE_BY_ID[h.type]
+    && Number.isInteger(h.dealer) && h.dealer >= 0 && h.dealer < PLAYER_COUNT
+    && validateCounts(h.type, h.counts).ok);
+}

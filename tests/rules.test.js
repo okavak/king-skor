@@ -177,3 +177,84 @@ test('isFinished at 20 hands', () => {
   g = withHand(g, makeHand('el', 3, [13, 0, 0, 0]));
   assert.equal(isFinished(g), true);
 });
+
+// ---- Task 3: sıralama, özet, istatistik, geçerlilik ----
+import { standings, summaryText, speechText, playerStats, isValidGame, expectedGameTotal } from '../rules.js';
+
+function fullGame(firstDealer = 0) {
+  // 20 legal hands: each dealer 3 ceza + 2 koz, each ceza type twice. Winner: seat 0.
+  let g = createGame({ players, firstDealer, now: new Date('2026-10-02T20:00:00Z') });
+  const seq = ['el', 'kupa', 'erkek', 'kiz', 'rifki', 'soniki', 'el', 'kupa', 'erkek', 'kiz', 'rifki', 'soniki'];
+  let c = 0;
+  for (let i = 0; i < 20; i++) {
+    const dealer = (firstDealer + i) % 4;
+    const round = Math.floor(i / 4); // 0..4
+    const isKoz = round >= 3;        // rounds 3-4 → koz (2 per dealer), rounds 0-2 → ceza (3 per dealer)
+    if (isKoz) g = withHand(g, makeHand('koz', dealer, [13, 0, 0, 0]));
+    else { const t = seq[c++]; g = withHand(g, makeHand(t, dealer, [0, 0, 0, TYPE_BY_ID[t].total])); }
+  }
+  return g;
+}
+
+test('a full legal game sums to zero and is finished', () => {
+  const g = fullGame();
+  assert.equal(isFinished(g), true);
+  assert.equal(gameTotals(g).reduce((a, b) => a + b, 0), 0);
+  assert.deepEqual(gameTotals(g), [5200, 0, 0, -5200]);
+  assert.equal(availableTypes(g, 0).every(x => !x.enabled), true, 'nothing left to call');
+});
+
+test('standings ranks descending with shared ranks on ties', () => {
+  const g = fullGame();
+  const st = standings(g);
+  assert.deepEqual(st.map(s => [s.seat, s.total, s.rank]), [[0, 5200, 1], [1, 0, 2], [2, 0, 2], [3, -5200, 4]]);
+});
+
+test('summaryText reports hand count for early finish', () => {
+  let g = createGame({ players, now: new Date('2026-10-02T20:00:00Z') });
+  g = withHand(g, makeHand('koz', 0, [13, 0, 0, 0]));
+  g = withHand(g, makeHand('kiz', 1, [0, 4, 0, 0]));
+  const txt = summaryText(g);
+  assert.match(txt, /2 el/);
+  assert.match(txt, /1\. Ali: 650/);
+  assert.match(txt, /4\. Ayşe: -400/);
+  assert.match(txt, /2\. Mehmet: 0/);
+});
+
+test('speechText reads totals with Turkish minus', () => {
+  let g = createGame({ players });
+  g = withHand(g, makeHand('kiz', 1, [0, 4, 0, 0]));
+  assert.equal(speechText(g), 'Ali 0. Ayşe eksi 400. Mehmet 0. Zeynep 0.');
+});
+
+test('playerStats merges names case-insensitively with tr-TR', () => {
+  const g1 = fullGame();
+  const g2 = { ...fullGame(), players: ['ALİ', 'ayşe', 'MEHMET', 'zeynep'] };
+  const stats = playerStats([g1, g2]);
+  assert.equal(stats.length, 4);
+  const ali = stats.find(s => s.name === 'Ali');
+  assert.equal(ali.games, 2);
+  assert.equal(ali.wins, 2);
+  assert.equal(ali.avgTotal, 5200);
+  assert.equal(ali.best, 5200);
+  assert.equal(ali.kings, 16, '8 koz hands × 2 games with 13 tricks ≥ threshold 10');
+  const zeynep = stats.find(s => s.name === 'Zeynep');
+  assert.equal(zeynep.wins, 0);
+  assert.equal(zeynep.worst, -5200);
+  assert.equal(stats[0].name, 'Ali', 'sorted by wins');
+});
+
+test('expectedGameTotal is 0 for defaults and shifts with custom points', () => {
+  assert.equal(expectedGameTotal(DEFAULT_RULES), 0);
+  assert.equal(expectedGameTotal({ ...DEFAULT_RULES, pointsPer: { ...DEFAULT_RULES.pointsPer, koz: 60 } }), 1040);
+});
+
+test('isValidGame accepts real games and rejects junk', () => {
+  assert.equal(isValidGame(fullGame()), true);
+  assert.equal(isValidGame(createGame({ players })), true);
+  assert.equal(isValidGame(null), false);
+  assert.equal(isValidGame({}), false);
+  assert.equal(isValidGame({ ...createGame({ players }), players: ['a'] }), false);
+  assert.equal(isValidGame({ ...createGame({ players }), hands: [{ type: 'yok', dealer: 0, counts: [1, 0, 0, 0] }] }), false);
+  assert.equal(isValidGame({ ...createGame({ players }), hands: [{ type: 'el', dealer: 9, counts: [13, 0, 0, 0] }] }), false);
+});
