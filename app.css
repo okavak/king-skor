@@ -77,13 +77,15 @@ input { font: inherit; color: inherit; }
 
 /* oyuncu satırları (Basit görünüm) */
 .players { display: flex; flex-direction: column; }
-.player-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 12px; padding: 14px 16px; min-height: 70px; position: relative; }
+.player-row { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 12px; padding: 14px 16px; min-height: 70px; position: relative; }
 .player-row + .player-row { border-top: 1px solid var(--line); }
 .player-row.dealer::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 4px 4px 0; background: var(--gold); }
-.rights { display: grid; grid-template-columns: repeat(3, 14px); gap: 2px 2px; font-size: 12px; line-height: 14px; }
-.rights .koz { color: var(--gold); }
-.rights .ceza { color: var(--red); }
-.rights .used { opacity: .35; }
+.rights { display: grid; grid-template-columns: repeat(3, 17px); gap: 3px 3px; }
+.ri { width: 17px; height: 17px; display: block; fill: none; stroke-width: 1.8; stroke-linejoin: round; }
+.ri.koz { stroke: var(--gold); }
+.ri.ceza { stroke: var(--red); }
+.ri.used.koz { fill: var(--gold); }
+.ri.used.ceza { fill: var(--red); }
 .player-name { font-weight: 600; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .player-sub { font-size: 13px; color: var(--muted); display: block; }
 .total { font-size: 28px; line-height: 1; text-align: right; }
@@ -101,7 +103,7 @@ input { font: inherit; color: inherit; }
 .mcard.dim { opacity: .3; }
 
 /* kalanlar şeridi */
-.remaining { display: flex; gap: 12px; justify-content: flex-start; flex-wrap: wrap; padding: 14px 4px 0; }
+.remaining { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; padding: 14px 2px 0; }
 .remaining .item { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--muted); min-width: 40px; }
 .remaining .count { font-weight: 700; color: var(--ink-2); font-size: 13px; }
 

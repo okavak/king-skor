@@ -62,8 +62,11 @@ function mcard(typeId, extra = '') {
 function rights(game, seat) {
   const q = quotaState(game);
   const r = game.rules;
-  const koz = Array.from({ length: r.kozPerPlayer }, (_, i) => (i < q.kozLeft[seat] ? '<span class="koz">○</span>' : '<span class="koz used">●</span>')).join('');
-  const ceza = Array.from({ length: r.cezaPerPlayer }, (_, i) => (i < q.cezaLeft[seat] ? '<span class="ceza">△</span>' : '<span class="ceza used">▲</span>')).join('');
+  // Kalan hak: içi boş çerçeve. Kullanılan hak: tamamen dolu şekil (alışılmış King skor tablosu dili).
+  const circle = used => `<svg class="ri koz${used ? ' used' : ''}" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg>`;
+  const tri = used => `<svg class="ri ceza${used ? ' used' : ''}" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2 14.3 13.6H1.7Z"/></svg>`;
+  const koz = Array.from({ length: r.kozPerPlayer }, (_, i) => circle(i >= q.kozLeft[seat])).join('');
+  const ceza = Array.from({ length: r.cezaPerPlayer }, (_, i) => tri(i >= q.cezaLeft[seat])).join('');
   return `<span class="rights" role="img" aria-label="${q.kozLeft[seat]} koz, ${q.cezaLeft[seat]} ceza hakkı kaldı">${koz}<span></span>${ceza}</span>`;
 }
 
@@ -114,7 +117,18 @@ function renderSheet() {
     return;
   }
   document.body.style.overflow = 'hidden';
-  $sheetRoot.innerHTML = sheetMarkup(); // Task 7'de tanımlanır
+  const { title, inner } = sheetParts();
+  // Panel bir kez oluşturulur; +/− dokunuşlarında yalnızca içerik değişir, açılış animasyonu tekrar oynamaz.
+  let sheet = $sheetRoot.querySelector('.sheet');
+  if (!sheet) {
+    $sheetRoot.innerHTML = '<div class="sheet-backdrop" data-action="sheet-close"></div><div class="sheet" role="dialog" aria-modal="true"></div>';
+    sheet = $sheetRoot.querySelector('.sheet');
+  }
+  const scroll = sheet.querySelector('.sheet-body')?.scrollTop || 0;
+  sheet.setAttribute('aria-label', title);
+  sheet.innerHTML = inner;
+  const body = sheet.querySelector('.sheet-body');
+  if (body) body.scrollTop = scroll;
 }
 
 function persist() {
@@ -377,7 +391,7 @@ ${!readOnly && !done ? `<div class="bottom-bar"><div class="inner"><button class
 };
 
 // ---------- El Ekle paneli ----------
-function sheetMarkup() {
+function sheetParts() {
   const sh = state.sheet;
   const g = state.game;
   const editing = sh.editIndex !== null;
@@ -415,7 +429,7 @@ function sheetMarkup() {
       : g.players.map((n, i) => `<div class="count-row">
           <span class="who"><span class="n">${esc(n)}${i === dealer ? ' <span style="color:var(--muted);font-weight:400;font-size:13px">dağıtan</span>' : ''}</span>
             <span class="pts num ${cls(sh.counts[i] * per)}">${sh.counts[i] ? formatPoints(sh.counts[i] * per) : '–'}</span>
-            ${remaining > 0 ? `<button class="fill-btn" data-action="fill" data-index="${i}">Kalanı ver (+${remaining})</button>` : ''}</span>
+            <button class="fill-btn" data-action="fill" data-index="${i}"${remaining > 0 ? '' : ' style="visibility:hidden" tabindex="-1"'}>Kalanı ver (+${Math.max(remaining, 0)})</button></span>
           <span class="stepper"><button data-action="dec" data-index="${i}" aria-label="${esc(n)} azalt"${sh.counts[i] <= 0 ? ' disabled' : ''}>−</button><span class="val num">${sh.counts[i]}</span><button data-action="inc" data-index="${i}" aria-label="${esc(n)} artır"${remaining <= 0 ? ' disabled' : ''}>+</button></span>
         </div>`).join('');
     body = suits + rows;
@@ -423,13 +437,12 @@ function sheetMarkup() {
     foot = `${status}<button class="btn btn-primary btn-block" data-action="save-hand"${v.ok ? '' : ' disabled'}>${editing ? 'Değişikliği kaydet' : 'Eli kaydet'}</button>`;
   }
 
-  return `<div class="sheet-backdrop" data-action="sheet-close"></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="handle"></div>
+  const inner = `<div class="handle"></div>
     <div class="sheet-head">${back ? '<button class="icon-btn" data-action="sheet-back" aria-label="Tür seçimine dön">‹</button>' : '<span></span>'}<h2>${esc(title)}</h2><button class="icon-btn" data-action="sheet-close" aria-label="Kapat">×</button></div>
     <p class="sheet-sub">${who}, ${rightsLine}</p>
     <div class="sheet-body">${body}</div>
-    ${foot ? `<div class="sheet-foot">${foot}</div>` : ''}
-  </div>`;
+    ${foot ? `<div class="sheet-foot">${foot}</div>` : ''}`;
+  return { title, inner };
 }
 
 function finishGame(game) {
