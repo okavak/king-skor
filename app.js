@@ -246,6 +246,278 @@ document.addEventListener('input', e => {
   }
 });
 
+// ---------- oyun tablosu ----------
+function lastHandLine(g, readOnly) {
+  const idx = g.hands.length - 1;
+  const h = g.hands[idx];
+  const t = TYPE_BY_ID[h.type];
+  const parts = handScores(h, g.rules).map((s, i) => (s ? `${esc(g.players[i])} ${formatPoints(s)}` : null)).filter(Boolean).join(', ');
+  return `<div class="hint" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">
+    <span>${idx + 1}. el ${esc(t.name)}: ${parts || 'puan yok'}</span>
+    ${readOnly ? '' : `<button class="btn btn-ghost" style="min-height:36px;padding:0 10px;flex:none" data-action="edit-hand" data-index="${idx}">Düzenle</button>`}
+  </div>`;
+}
+
+views.board = () => {
+  const g = activeGame();
+  if (!g) { state.view = 'home'; return views.home(); }
+  const readOnly = Boolean(state.viewGame);
+  const done = Boolean(g.finishedAt) || isFinished(g);
+  const totals = gameTotals(g);
+  const dealer = currentDealer(g);
+  const q = quotaState(g);
+  const title = done ? `Bitti, ${g.hands.length} el` : `El ${g.hands.length + 1}/${handsTotal(g.rules)}`;
+  const leader = Math.max(...totals);
+
+  const simple = `<div class="panel players">${g.players.map((name, i) => `
+    <div class="player-row${!done && i === dealer ? ' dealer' : ''}">
+      ${rights(g, i)}
+      <span><span class="player-name">${esc(name)}</span>${!done && i === dealer ? '<span class="player-sub">dağıtıyor</span>' : ''}</span>
+      <span class="total num ${cls(totals[i])}"${g.hands.length && totals[i] === leader ? ' style="font-weight:800"' : ''}>${formatPoints(totals[i])}</span>
+    </div>`).join('')}</div>
+    ${g.hands.length ? lastHandLine(g, readOnly) : '<p class="hint" style="text-align:center;margin-top:14px">Henüz el oynanmadı.</p>'}`;
+
+  const rows = g.hands.map((h, idx) => {
+    const sc = handScores(h, g.rules);
+    const t = TYPE_BY_ID[h.type];
+    const attrs = readOnly ? '' : ` role="button" tabindex="0" data-action="edit-hand" data-index="${idx}" aria-label="${idx + 1}. eli düzenle"`;
+    return `<div style="display:contents"${attrs}>
+      <span class="cell label">${mcard(h.type, 'sm')}<span>${idx + 1}. ${esc(t.short)}${h.trumpSuit ? ` ${SUITS[h.trumpSuit]}` : ''}</span></span>
+      ${sc.map((s, i) => `<span class="cell num ${cls(s)}${i === h.dealer ? ' dealer' : ''}">${s === 0 ? '–' : formatPoints(s)}</span>`).join('')}
+    </div>`;
+  }).join('');
+  const detail = `<div class="panel">
+    <div class="grid">
+      <span class="cell head"></span>${g.players.map(n => `<span class="cell head" title="${esc(n)}">${esc(n)}</span>`).join('')}
+      ${rows || '<span class="cell label" style="grid-column:1/-1;justify-content:center;color:var(--muted)">Henüz el oynanmadı</span>'}
+    </div>
+    <div class="grid totals"><span class="cell label">Toplam</span>${totals.map(t => `<span class="cell num ${cls(t)}">${formatPoints(t)}</span>`).join('')}</div>
+  </div>`;
+
+  const remaining = `<div class="remaining" role="img" aria-label="Kalan eller">${HAND_TYPES.map(t => {
+    const left = q.typeLeft[t.id];
+    return `<span class="item">${mcard(t.id, `sm${left <= 0 ? ' dim' : ''}`)}<span class="count">${left}</span><span>${esc(t.short)}</span></span>`;
+  }).join('')}</div>`;
+
+  const menu = state.menuOpen ? `<div class="menu-backdrop" data-action="menu-close"></div><div class="menu" role="menu">
+    ${!readOnly && !done && g.hands.length ? '<button role="menuitem" data-action="undo-last">Son eli sil</button>' : ''}
+    <button role="menuitem" data-action="speak">Skoru sesli oku</button>
+    <button role="menuitem" data-action="share">Paylaş</button>
+    ${!readOnly && !done && g.hands.length ? '<button role="menuitem" data-action="finish-early">Oyunu şimdi bitir</button>' : ''}
+    ${readOnly
+      ? `<button role="menuitem" class="danger" data-action="delete-history" data-id="${esc(g.id)}">Bu oyunu geçmişten sil</button>`
+      : '<button role="menuitem" class="danger" data-action="abandon">Oyunu sil</button>'}
+  </div>` : '';
+
+  return `<div class="screen${!readOnly && !done ? ' has-bar' : ''}">
+  <header class="topbar"><button class="icon-btn" data-action="exit-board" aria-label="Geri">‹</button><h1>${esc(title)}</h1><button class="icon-btn" data-action="menu-toggle" aria-label="Menü" aria-expanded="${state.menuOpen}">⋯</button>${menu}</header>
+  <div style="text-align:center"><div class="segmented" role="group" aria-label="Görünüm">
+    <button aria-pressed="${state.boardMode === 'simple'}" data-action="board-mode" data-mode="simple">Basit</button>
+    <button aria-pressed="${state.boardMode === 'detail'}" data-action="board-mode" data-mode="detail">Detaylı</button></div></div>
+  ${state.boardMode === 'simple' ? simple : detail}
+  ${remaining}
+</div>
+${!readOnly && !done ? `<div class="bottom-bar"><div class="inner"><button class="btn btn-primary btn-block" data-action="open-sheet">El ekle</button><span class="who">${esc(g.players[dealer])} konuşuyor</span></div></div>` : ''}`;
+};
+
+// ---------- El Ekle paneli ----------
+function sheetMarkup() {
+  const sh = state.sheet;
+  const g = state.game;
+  const editing = sh.editIndex !== null;
+  const handIndex = editing ? sh.editIndex : g.hands.length;
+  const dealer = dealerForHand(g, handIndex);
+  const q = quotaState(editing ? withoutHand(g, sh.editIndex) : g);
+  const who = `${esc(g.players[dealer])} konuşuyor`;
+  const rightsLine = g.rules.enforceQuotas ? `kalan hakkı ${q.cezaLeft[dealer]} ceza, ${q.kozLeft[dealer]} koz` : 'haklar serbest';
+  let title, body, foot, back = false;
+
+  if (sh.step === 'type') {
+    const list = availableTypes(g, dealer, { handIndex, excludeIndex: editing ? sh.editIndex : null });
+    title = editing ? `${handIndex + 1}. eli düzenle` : `${handIndex + 1}. el`;
+    body = `<div class="type-list">${list.map(a => {
+      const t = TYPE_BY_ID[a.type];
+      return `<button class="type-item" data-action="pick-type" data-type="${t.id}"${a.enabled ? '' : ' disabled'}>
+        ${mcard(t.id)}<span><span class="name">${esc(t.name)}</span>${a.enabled ? '' : `<br><span class="why">${esc(a.reason)}</span>`}</span>
+        <span class="left">kalan ${a.left}</span></button>`;
+    }).join('')}</div>`;
+    foot = editing ? `<button class="btn btn-danger btn-block" data-action="delete-hand" data-index="${sh.editIndex}">Bu eli sil</button>` : '';
+  } else {
+    back = true;
+    const t = TYPE_BY_ID[sh.type];
+    const v = validateCounts(sh.type, sh.counts);
+    const sum = sh.counts.reduce((a, b) => a + b, 0);
+    const remaining = t.total - sum;
+    const per = g.rules.pointsPer[sh.type];
+    title = editing ? `${handIndex + 1}. eli düzenle: ${t.name}` : t.name;
+    const suits = sh.type === 'koz' ? `<div class="suits" role="group" aria-label="Koz rengi (isteğe bağlı)">${Object.entries(SUITS).map(([k, s]) =>
+      `<button class="${k === 'h' || k === 'd' ? 'red' : ''}" data-action="pick-suit" data-suit="${k}" aria-pressed="${sh.trumpSuit === k}" aria-label="${s}">${s}</button>`).join('')}</div>` : '';
+    const rows = sh.type === 'rifki'
+      ? `<p class="hint" style="text-align:center;margin-top:12px">Rıfkıyı (kupa papazı) kim aldı?</p><div class="pick-grid">${g.players.map((n, i) =>
+          `<button data-action="pick-rifki" data-index="${i}" aria-pressed="${sh.counts[i] === 1}">${esc(n)}</button>`).join('')}</div>`
+      : g.players.map((n, i) => `<div class="count-row">
+          <span class="who"><span class="n">${esc(n)}${i === dealer ? ' <span style="color:var(--muted);font-weight:400;font-size:13px">dağıtan</span>' : ''}</span>
+            <span class="pts num ${cls(sh.counts[i] * per)}">${sh.counts[i] ? formatPoints(sh.counts[i] * per) : '–'}</span>
+            ${remaining > 0 ? `<button class="fill-btn" data-action="fill" data-index="${i}">Kalanı ver (+${remaining})</button>` : ''}</span>
+          <span class="stepper"><button data-action="dec" data-index="${i}" aria-label="${esc(n)} azalt"${sh.counts[i] <= 0 ? ' disabled' : ''}>−</button><span class="val num">${sh.counts[i]}</span><button data-action="inc" data-index="${i}" aria-label="${esc(n)} artır"${remaining <= 0 ? ' disabled' : ''}>+</button></span>
+        </div>`).join('');
+    body = suits + rows;
+    const status = v.ok ? `<span class="status ok">Tamam, ${t.total} ${esc(t.unit)} dağıtıldı</span>` : `<span class="status${remaining < 0 ? ' err' : ''}">${esc(v.error)}</span>`;
+    foot = `${status}<button class="btn btn-primary btn-block" data-action="save-hand"${v.ok ? '' : ' disabled'}>${editing ? 'Değişikliği kaydet' : 'Eli kaydet'}</button>`;
+  }
+
+  return `<div class="sheet-backdrop" data-action="sheet-close"></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="handle"></div>
+    <div class="sheet-head">${back ? '<button class="icon-btn" data-action="sheet-back" aria-label="Tür seçimine dön">‹</button>' : '<span></span>'}<h2>${esc(title)}</h2><button class="icon-btn" data-action="sheet-close" aria-label="Kapat">×</button></div>
+    <p class="sheet-sub">${who}, ${rightsLine}</p>
+    <div class="sheet-body">${body}</div>
+    ${foot ? `<div class="sheet-foot">${foot}</div>` : ''}
+  </div>`;
+}
+
+function finishGame(game) {
+  const done = archive(game);
+  state.game = null;
+  state.finishedGame = done;
+  state.sheet = null;
+  setView('finish');
+}
+
+views.finish = () => {
+  const g = state.finishedGame;
+  if (!g) { state.view = 'home'; return views.home(); }
+  const st = standings(g);
+  const sum = gameTotals(g).reduce((a, b) => a + b, 0);
+  const expected = expectedGameTotal(g.rules);
+  const full = g.hands.length >= handsTotal(g.rules);
+  const check = !full ? `${g.hands.length} el oynandı, oyun erken bitirildi.`
+    : sum === expected ? `Toplam ${sum}, hesap tutuyor.`
+      : `Toplam ${sum}, beklenen ${expected}: bir el eksik ya da hatalı girilmiş olabilir.`;
+  return `<div class="screen">
+  <header class="topbar"><span></span><h1>Oyun bitti</h1><span></span></header>
+  <div class="panel podium">${st.map(s => `<div class="standing${s.rank === 1 ? ' first' : ''}"><span class="rank num">${s.rank}.</span><span class="name">${esc(g.players[s.seat])}</span><span class="total num ${cls(s.total)}">${formatPoints(s.total)}</span></div>`).join('')}</div>
+  <p class="check${full && sum !== expected ? ' bad' : ''}">${esc(check)}</p>
+  <div class="stack">
+    <button class="btn btn-primary btn-block" data-action="share">Sonucu paylaş</button>
+    <button class="btn btn-block" data-action="rematch">Aynı oyuncularla yeni oyun</button>
+    <button class="btn btn-ghost btn-block" data-action="go" data-view="home">Ana ekran</button>
+  </div>
+</div>`;
+};
+
+// ---------- eylemler (tablo, panel) ----------
+Object.assign(actions, {
+  'board-mode'({ mode }) { state.boardMode = mode; render(); },
+  'open-sheet'() { state.menuOpen = false; state.sheet = { step: 'type', type: null, counts: null, trumpSuit: null, editIndex: null }; render(); },
+  'sheet-close'() { state.sheet = null; render(); },
+  'sheet-back'() { state.sheet.step = 'type'; render(); },
+  'pick-type'({ type }) {
+    const sh = state.sheet;
+    const prev = sh.editIndex !== null ? state.game.hands[sh.editIndex] : null;
+    const keep = prev && prev.type === type;
+    sh.type = type;
+    sh.counts = keep ? [...prev.counts] : new Array(PLAYER_COUNT).fill(0);
+    sh.trumpSuit = keep ? prev.trumpSuit || null : null;
+    sh.step = 'counts';
+    render();
+  },
+  inc({ index }) {
+    const sh = state.sheet;
+    const sum = sh.counts.reduce((a, b) => a + b, 0);
+    if (sum < TYPE_BY_ID[sh.type].total) { sh.counts[Number(index)] += 1; renderSheet(); }
+  },
+  dec({ index }) {
+    const sh = state.sheet;
+    if (sh.counts[Number(index)] > 0) { sh.counts[Number(index)] -= 1; renderSheet(); }
+  },
+  fill({ index }) {
+    const sh = state.sheet;
+    const sum = sh.counts.reduce((a, b) => a + b, 0);
+    sh.counts[Number(index)] += Math.max(0, TYPE_BY_ID[sh.type].total - sum);
+    renderSheet();
+  },
+  'pick-rifki'({ index }) { state.sheet.counts = state.sheet.counts.map((_, i) => (i === Number(index) ? 1 : 0)); renderSheet(); },
+  'pick-suit'({ suit }) { state.sheet.trumpSuit = state.sheet.trumpSuit === suit ? null : suit; renderSheet(); },
+  'save-hand'() {
+    const sh = state.sheet;
+    const g = state.game;
+    if (!sh || !g) return;
+    const v = validateCounts(sh.type, sh.counts);
+    if (!v.ok) return toast(v.error);
+    const editing = sh.editIndex !== null;
+    const handIndex = editing ? sh.editIndex : g.hands.length;
+    const hand = makeHand(sh.type, dealerForHand(g, handIndex), sh.counts, sh.trumpSuit);
+    const next = editing ? withHandReplaced(g, sh.editIndex, hand) : withHand(g, hand);
+    state.game = next;
+    state.sheet = null;
+    persist();
+    if (!editing && isFinished(next)) return finishGame(next);
+    render();
+    toast(editing ? 'El güncellendi' : `${handIndex + 1}. el kaydedildi`);
+  },
+  'edit-hand'({ index }) {
+    if (state.viewGame) return;
+    const h = state.game?.hands[Number(index)];
+    if (!h) return;
+    state.menuOpen = false;
+    state.sheet = { step: 'counts', type: h.type, counts: [...h.counts], trumpSuit: h.trumpSuit || null, editIndex: Number(index) };
+    render();
+  },
+  'delete-hand'({ index }) {
+    if (!confirm(`${Number(index) + 1}. el silinsin mi? Sonraki eller bir sıra öne kayar.`)) return;
+    state.game = withoutHand(state.game, Number(index));
+    state.sheet = null;
+    persist();
+    render();
+    toast('El silindi');
+  },
+  'undo-last'() {
+    state.menuOpen = false;
+    const n = state.game.hands.length;
+    if (!n || !confirm(`Son el (${n}.) silinsin mi?`)) return render();
+    state.game = withoutHand(state.game, n - 1);
+    persist();
+    render();
+    toast('Son el silindi');
+  },
+  'menu-toggle'() { state.menuOpen = !state.menuOpen; render(); },
+  'menu-close'() { state.menuOpen = false; render(); },
+  'finish-early'() {
+    state.menuOpen = false;
+    if (!confirm('Oyun şimdi bitirilsin mi? Kalan eller oynanmamış sayılır.')) return render();
+    finishGame(state.game);
+  },
+  abandon() {
+    state.menuOpen = false;
+    if (!confirm('Bu oyun tamamen silinsin mi? Skorlar geçmişe kaydedilmez.')) return render();
+    state.game = null;
+    store.clearCurrent();
+    setView('home');
+    toast('Oyun silindi');
+  },
+  'exit-board'() { state.viewGame = null; setView('home'); },
+  'open-history'({ id }) {
+    const g = store.loadHistory().find(x => x.id === id);
+    if (!g) return;
+    state.viewGame = g;
+    state.boardMode = 'detail';
+    setView('board');
+  },
+  'delete-history'({ id }) {
+    state.menuOpen = false;
+    if (!confirm('Bu oyun geçmişten silinsin mi?')) return render();
+    store.removeFromHistory(id);
+    state.viewGame = null;
+    setView('home');
+    toast('Oyun geçmişten silindi');
+  },
+  rematch() {
+    const g = state.finishedGame;
+    state.draft = { names: [...g.players], firstDealer: (g.firstDealer + 1) % PLAYER_COUNT };
+    setView('new');
+  },
+});
+
 // ---------- başlat ----------
 if ('serviceWorker' in navigator && !window.__KING_BUNDLE__) {
   window.addEventListener('load', () => {
