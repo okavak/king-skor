@@ -77,3 +77,70 @@ export function validateCounts(type, counts) {
 export function formatPoints(n) {
   return String(n);
 }
+
+export function dealerForHand(game, index) {
+  return (game.firstDealer + index) % PLAYER_COUNT;
+}
+
+export function currentDealer(game) {
+  return dealerForHand(game, game.hands.length);
+}
+
+export function withHand(game, hand) {
+  return { ...game, hands: [...game.hands, hand] };
+}
+
+export function withHandReplaced(game, index, hand) {
+  const hands = game.hands.slice();
+  hands[index] = hand;
+  return { ...game, hands };
+}
+
+export function withoutHand(game, index) {
+  return { ...game, hands: game.hands.filter((_, i) => i !== index) };
+}
+
+export function gameTotals(game) {
+  const totals = new Array(PLAYER_COUNT).fill(0);
+  for (const h of game.hands) handScores(h, game.rules).forEach((s, i) => { totals[i] += s; });
+  return totals;
+}
+
+export function quotaState(game) {
+  const r = game.rules;
+  const cezaLeft = new Array(PLAYER_COUNT).fill(r.cezaPerPlayer);
+  const kozLeft = new Array(PLAYER_COUNT).fill(r.kozPerPlayer);
+  const typeLeft = {};
+  for (const t of HAND_TYPES) typeLeft[t.id] = t.ceza ? r.maxPerCezaType : PLAYER_COUNT * r.kozPerPlayer;
+  for (const h of game.hands) {
+    const t = TYPE_BY_ID[h.type];
+    if (!t) continue;
+    if (t.ceza) cezaLeft[h.dealer] -= 1; else kozLeft[h.dealer] -= 1;
+    typeLeft[h.type] -= 1;
+  }
+  return { cezaLeft, kozLeft, typeLeft, handsLeft: handsTotal(r) - game.hands.length };
+}
+
+export function availableTypes(game, dealer, { handIndex = game.hands.length, excludeIndex = null } = {}) {
+  const base = excludeIndex === null ? game : withoutHand(game, excludeIndex);
+  const r = game.rules;
+  const q = quotaState(base);
+  const name = game.players[dealer];
+  return HAND_TYPES.map(t => {
+    const left = q.typeLeft[t.id];
+    const ok = { type: t.id, enabled: true, reason: '', left };
+    if (!r.enforceQuotas) return ok;
+    if (t.ceza) {
+      if (left <= 0) return { ...ok, enabled: false, reason: `${t.name} ${r.maxPerCezaType} kez oynandı` };
+      if (q.cezaLeft[dealer] <= 0) return { ...ok, enabled: false, reason: `${name} için ceza hakkı kalmadı` };
+    } else {
+      if (q.kozLeft[dealer] <= 0) return { ...ok, enabled: false, reason: `${name} için koz hakkı kalmadı` };
+      if (r.noKozFirstRound && handIndex < PLAYER_COUNT) return { ...ok, enabled: false, reason: `İlk ${PLAYER_COUNT} elde koz seçilemez` };
+    }
+    return ok;
+  });
+}
+
+export function isFinished(game) {
+  return game.hands.length >= handsTotal(game.rules);
+}

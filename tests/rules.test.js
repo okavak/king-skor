@@ -62,3 +62,118 @@ test('formatPoints shows sign only for negatives and dash for zero', () => {
   assert.equal(formatPoints(650), '650');
   assert.equal(formatPoints(0), '0');
 });
+
+// ---- Task 2: rotasyon, kota, uygunluk ----
+import {
+  dealerForHand, currentDealer, gameTotals, quotaState, availableTypes, isFinished,
+  withHand, withHandReplaced, withoutHand,
+} from '../rules.js';
+
+function enabledIds(list) { return list.filter(x => x.enabled).map(x => x.type); }
+
+test('dealer rotates clockwise from firstDealer', () => {
+  const g = createGame({ players, firstDealer: 3 });
+  assert.equal(dealerForHand(g, 0), 3);
+  assert.equal(dealerForHand(g, 1), 0);
+  assert.equal(dealerForHand(g, 4), 3);
+  assert.equal(currentDealer(g), 3);
+  const g2 = withHand(g, makeHand('el', 3, [13, 0, 0, 0]));
+  assert.equal(currentDealer(g2), 0);
+  assert.equal(g.hands.length, 0, 'withHand is immutable');
+});
+
+test('gameTotals sums every hand', () => {
+  let g = createGame({ players });
+  g = withHand(g, makeHand('el', 0, [5, 3, 5, 0]));
+  g = withHand(g, makeHand('koz', 1, [7, 2, 4, 0]));
+  assert.deepEqual(gameTotals(g), [100, -50, -50, 0]);
+});
+
+test('quotaState tracks per-player and per-type remaining', () => {
+  let g = createGame({ players, firstDealer: 0 });
+  g = withHand(g, makeHand('kupa', 0, [13, 0, 0, 0]));
+  g = withHand(g, makeHand('koz', 1, [13, 0, 0, 0]));
+  g = withHand(g, makeHand('kupa', 2, [13, 0, 0, 0]));
+  const q = quotaState(g);
+  assert.deepEqual(q.cezaLeft, [2, 3, 2, 3]);
+  assert.deepEqual(q.kozLeft, [2, 1, 2, 2]);
+  assert.equal(q.typeLeft.kupa, 0);
+  assert.equal(q.typeLeft.el, 2);
+  assert.equal(q.typeLeft.koz, 7);
+  assert.equal(q.handsLeft, 17);
+});
+
+test('availableTypes disables exhausted ceza type with reason', () => {
+  let g = createGame({ players, firstDealer: 0 });
+  g = withHand(g, makeHand('kupa', 0, [13, 0, 0, 0]));
+  g = withHand(g, makeHand('kupa', 1, [13, 0, 0, 0]));
+  const list = availableTypes(g, 2);
+  const kupa = list.find(x => x.type === 'kupa');
+  assert.equal(kupa.enabled, false);
+  assert.match(kupa.reason, /Kupa Almaz 2 kez oynandı/);
+  assert.equal(kupa.left, 0);
+  assert.deepEqual(enabledIds(list), ['el', 'erkek', 'kiz', 'rifki', 'soniki', 'koz']);
+});
+
+test('availableTypes disables ceza when dealer used 3 ceza, koz when used 2 koz', () => {
+  let g = createGame({ players, firstDealer: 0 });
+  // dealer 0 plays ceza at hands 0, 4, 8 (every 4th hand); others fill in
+  const plan = [
+    ['el', 0], ['koz', 1], ['koz', 2], ['koz', 3],
+    ['kiz', 0], ['koz', 1], ['koz', 2], ['koz', 3],
+    ['rifki', 0], ['el', 1], ['kiz', 2], ['rifki', 3],
+  ];
+  for (const [type, dealer] of plan) g = withHand(g, makeHand(type, dealer, [TYPE_BY_ID[type].total, 0, 0, 0]));
+  const forZero = availableTypes(g, 0);
+  assert.deepEqual(enabledIds(forZero), ['koz']);
+  assert.match(forZero.find(x => x.type === 'kupa').reason, /Ali için ceza hakkı kalmadı/);
+  const forOne = availableTypes(g, 1);
+  assert.equal(forOne.find(x => x.type === 'koz').enabled, false);
+  assert.match(forOne.find(x => x.type === 'koz').reason, /Ayşe için koz hakkı kalmadı/);
+});
+
+test('availableTypes ignores quotas when enforceQuotas is false', () => {
+  let g = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
+  g = withHand(g, makeHand('kupa', 0, [13, 0, 0, 0]));
+  g = withHand(g, makeHand('kupa', 1, [13, 0, 0, 0]));
+  assert.equal(availableTypes(g, 2).every(x => x.enabled), true);
+});
+
+test('availableTypes blocks koz in first 4 hands when noKozFirstRound', () => {
+  let g = createGame({ players, rules: { ...DEFAULT_RULES, noKozFirstRound: true } });
+  const koz0 = availableTypes(g, 0).find(x => x.type === 'koz');
+  assert.equal(koz0.enabled, false);
+  assert.match(koz0.reason, /İlk 4 elde koz seçilemez/);
+  for (let i = 0; i < 4; i++) g = withHand(g, makeHand('el', i, [13, 0, 0, 0]));
+  assert.equal(availableTypes(g, 0).find(x => x.type === 'koz').enabled, true);
+});
+
+test('availableTypes excludes the hand being edited', () => {
+  let g = createGame({ players, firstDealer: 0 });
+  g = withHand(g, makeHand('kupa', 0, [13, 0, 0, 0]));
+  g = withHand(g, makeHand('kupa', 1, [13, 0, 0, 0]));
+  // Editing hand #1 (dealer 1): kupa must stay selectable because that hand is its own second kupa.
+  const list = availableTypes(g, 1, { handIndex: 1, excludeIndex: 1 });
+  assert.equal(list.find(x => x.type === 'kupa').enabled, true);
+  assert.equal(list.find(x => x.type === 'kupa').left, 1);
+});
+
+test('withHandReplaced / withoutHand are immutable and keep order', () => {
+  let g = createGame({ players });
+  g = withHand(g, makeHand('el', 0, [13, 0, 0, 0]));
+  g = withHand(g, makeHand('kiz', 1, [4, 0, 0, 0]));
+  const g2 = withHandReplaced(g, 0, makeHand('el', 0, [0, 13, 0, 0]));
+  assert.deepEqual(g2.hands[0].counts, [0, 13, 0, 0]);
+  assert.deepEqual(g.hands[0].counts, [13, 0, 0, 0]);
+  const g3 = withoutHand(g, 0);
+  assert.equal(g3.hands.length, 1);
+  assert.equal(g3.hands[0].type, 'kiz');
+});
+
+test('isFinished at 20 hands', () => {
+  let g = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
+  for (let i = 0; i < 19; i++) g = withHand(g, makeHand('el', i % 4, [13, 0, 0, 0]));
+  assert.equal(isFinished(g), false);
+  g = withHand(g, makeHand('el', 3, [13, 0, 0, 0]));
+  assert.equal(isFinished(g), true);
+});
