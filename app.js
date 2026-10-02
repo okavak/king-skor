@@ -136,7 +136,7 @@ views.home = () => {
   return `<div class="screen">
   <header class="topbar"><h1 class="brand">King Skor</h1><button class="icon-btn" data-action="go" data-view="settings" aria-label="Ayarlar">⚙︎</button></header>
   ${g ? `<button class="panel continue" data-action="continue">
-    <span><span class="title">${esc(g.players.join(', '))}</span><span class="sub">El ${g.hands.length}/${handsTotal(g.rules)}, ${esc(g.players[currentDealer(g)])} konuşuyor</span></span>
+    <span><span class="title">${esc(g.players.join(', '))}</span><span class="sub">${g.hands.length}/${handsTotal(g.rules)} el oynandı, ${esc(g.players[currentDealer(g)])} konuşuyor</span></span>
     <span class="btn btn-primary" aria-hidden="true">Devam et</span></button>` : ''}
   <button class="btn ${g ? '' : 'btn-primary'} btn-block" data-action="new-game">Yeni oyun</button>
   ${showHint ? installHint() : ''}
@@ -516,6 +516,123 @@ Object.assign(actions, {
     state.draft = { names: [...g.players], firstDealer: (g.firstDealer + 1) % PLAYER_COUNT };
     setView('new');
   },
+});
+
+// ---------- ayarlar ve istatistik ----------
+views.settings = () => {
+  const s = state.settings || (state.settings = store.loadSettings());
+  const row = (key, label, desc) => `<div class="toggle-row"><span><span class="t">${label}</span><br><span class="d">${desc}</span></span><button class="switch" role="switch" aria-checked="${Boolean(s[key])}" data-action="toggle" data-key="${key}" aria-label="${label}"></button></div>`;
+  return `<div class="screen">
+  <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>Ayarlar</h1><span></span></header>
+  <p class="hint">Değişiklikler yeni oyunlarda geçerli olur; devam eden oyun kendi kurallarıyla sürer.</p>
+  <div class="section"><h2>Puanlar (birim başına)</h2><div class="panel" style="padding:8px 14px"><div class="points-grid">
+    ${HAND_TYPES.map(t => `${mcard(t.id)}<label for="pt-${t.id}">${esc(t.name)} <span style="color:var(--muted);font-size:13px">/ ${esc(t.unit)}</span></label><input class="input num" id="pt-${t.id}" type="number" inputmode="numeric" step="10" data-field="points" data-type="${t.id}" value="${Number.isFinite(s.pointsPer[t.id]) ? s.pointsPer[t.id] : ''}">`).join('')}
+  </div></div></div>
+  <div class="section"><h2>Kurallar</h2><div class="panel" style="padding:0 14px">
+    ${row('enforceQuotas', 'Hakları zorunlu tut', 'Oyuncu başına 3 ceza, 2 koz; her ceza en fazla 2 kez')}
+    ${row('noKozFirstRound', 'İlk 4 elde koz yok', 'Ev kuralı: ilk turda koz seçilemez')}
+    <div class="toggle-row" style="border-bottom:0"><span><span class="t">King eşiği</span><br><span class="d">Koz elinde bu kadar ve üstü el alan "King yapmış" sayılır</span></span><input class="input num" type="number" inputmode="numeric" min="1" max="13" style="width:76px;text-align:right" aria-label="King eşiği" data-field="kingThreshold" value="${Number.isFinite(s.kingThreshold) ? s.kingThreshold : ''}"></div>
+  </div></div>
+  <div class="stack"><button class="btn btn-primary btn-block" data-action="settings-save">Ayarları kaydet</button><button class="btn btn-ghost" data-action="settings-reset">Varsayılanlara dön</button></div>
+  <div class="section"><h2>Veriler</h2><div class="stack" style="margin-top:0">
+    <button class="btn btn-block" data-action="export">Yedek al</button>
+    <label class="btn btn-block" for="import-file">Yedekten geri yükle</label><input id="import-file" type="file" accept="application/json,.json" data-field="import-file" hidden>
+    <button class="btn btn-danger btn-block" data-action="wipe">Tüm verileri sil</button>
+  </div></div>
+  <p class="hint" style="text-align:center;margin-top:24px">King Skor ${esc(APP_VERSION)}. Veriler yalnızca bu cihazda saklanır.</p>
+</div>`;
+};
+
+views.stats = () => {
+  const stats = playerStats(store.loadHistory());
+  const threshold = store.loadSettings().kingThreshold;
+  return `<div class="screen">
+  <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>İstatistikler</h1><span></span></header>
+  ${stats.length ? `<div class="panel" style="padding:4px 10px;overflow-x:auto"><table class="table"><thead><tr><th>Oyuncu</th><th>Oyun</th><th>Galibiyet</th><th>Ortalama</th><th>En iyi</th><th>En kötü</th><th>King</th></tr></thead><tbody>
+    ${stats.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.games}</td><td class="num">${p.wins}</td><td class="num ${cls(p.avgTotal)}">${formatPoints(p.avgTotal)}</td><td class="num ${cls(p.best)}">${formatPoints(p.best)}</td><td class="num ${cls(p.worst)}">${formatPoints(p.worst)}</td><td class="num">${p.kings}</td></tr>`).join('')}
+  </tbody></table></div><p class="hint" style="margin-top:12px">King: koz elinde ${threshold} ve üstü el almak.</p>`
+    : '<div class="panel empty">Biten oyun olunca oyuncu istatistikleri burada toplanır.</div>'}
+</div>`;
+};
+
+function speak(text) {
+  if (!('speechSynthesis' in window)) return toast('Bu cihazda sesli okuma desteklenmiyor');
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'tr-TR';
+  const voice = speechSynthesis.getVoices().find(v => v.lang?.toLowerCase().startsWith('tr'));
+  if (voice) u.voice = voice;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+async function share(text) {
+  try {
+    if (navigator.share) { await navigator.share({ text }); return; }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;
+  }
+  try { await navigator.clipboard.writeText(text); toast('Sonuç panoya kopyalandı'); }
+  catch { toast('Paylaşım bu tarayıcıda desteklenmiyor'); }
+}
+
+function exportBackup() {
+  const json = store.exportAll();
+  const name = `king-skor-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+  const blob = new Blob([json], { type: 'application/json' });
+  const file = new File([blob], name, { type: 'application/json' });
+  if (navigator.canShare?.({ files: [file] })) { navigator.share({ files: [file], title: 'King Skor yedeği' }).catch(() => {}); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+Object.assign(actions, {
+  speak() { state.menuOpen = false; render(); speak(speechText(activeGame())); },
+  share() {
+    state.menuOpen = false;
+    render();
+    const g = state.view === 'finish' ? state.finishedGame : activeGame();
+    if (g) share(summaryText(g));
+  },
+  toggle({ key }) { state.settings[key] = !state.settings[key]; render(); },
+  'settings-save'() {
+    const s = state.settings;
+    const bad = HAND_TYPES.find(t => !Number.isInteger(s.pointsPer[t.id]));
+    if (bad) return toast(`${bad.name} puanı tam sayı olmalı`);
+    if (!Number.isInteger(s.kingThreshold) || s.kingThreshold < 1 || s.kingThreshold > 13) return toast('King eşiği 1 ile 13 arasında olmalı');
+    store.saveSettings(s);
+    toast('Ayarlar kaydedildi');
+  },
+  'settings-reset'() { state.settings = cloneRules(DEFAULT_RULES); render(); toast('Varsayılanlar yüklendi, kaydetmeyi unutmayın'); },
+  export() { exportBackup(); },
+  wipe() {
+    if (!confirm('Tüm oyunlar, geçmiş ve ayarlar silinsin mi? Bu işlem geri alınamaz.')) return;
+    store.wipeAll();
+    state.game = null;
+    state.settings = null;
+    setView('home');
+    toast('Tüm veriler silindi');
+  },
+});
+
+document.addEventListener('change', async e => {
+  const el = e.target;
+  if (el.dataset?.field !== 'import-file') return;
+  const file = el.files?.[0];
+  el.value = '';
+  if (!file) return;
+  const text = await file.text();
+  if (!confirm('Bu cihazdaki tüm veriler yedektekilerle değiştirilecek. Devam edilsin mi?')) return;
+  const r = store.importAll(text);
+  if (!r.ok) return toast(r.error);
+  state.game = store.loadCurrent();
+  state.settings = null;
+  setView('home');
+  toast('Yedek geri yüklendi');
 });
 
 // ---------- başlat ----------
