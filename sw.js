@@ -1,5 +1,5 @@
 // sw.js — uygulama kabuğunu önbelleğe alır; önbellek-önce, arka planda yenile.
-const VERSION = '2026.10.02-2';
+const VERSION = '2026.10.02-2101';
 const CACHE = `king-skor-${VERSION}`;
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './rules.js', './store.js', './version.js',
