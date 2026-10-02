@@ -49,8 +49,13 @@ Standart bireysel King, 4 oyuncu, 20 el. Dağıtan oyuncu eli seçer. Her oyuncu
 Ceza toplamı 2 × 2600 = 5200, koz toplamı 8 × 650 = 5200 → oyun sonunda genel toplam 0 olmalı
 (uygulama bunu tutarlılık kontrolü olarak gösterir).
 
-Ayarlanabilir: puan/birim değerleri, kota zorunluluğu (açık/kapalı). Değişiklikler yeni oyunlara
-uygulanır; devam eden oyun kurallarının anlık görüntüsünü taşır.
+Oyun akışı notu: ilk eli karo ikilisi olan oyuncu başlatır (skoru etkilemez; uygulama bunu
+sadece yeni oyun ekranında kısa ipucu olarak gösterir).
+
+Ayarlanabilir: puan/birim değerleri, kota zorunluluğu (açık/kapalı), "ilk 4 elde koz seçilemez"
+ev kuralı (varsayılan kapalı), "King eşiği" (koz elinde bu kadar ve üstü el alan "King yapmış"
+sayılır, varsayılan 10; sadece istatistik). Değişiklikler yeni oyunlara uygulanır; devam eden
+oyun kurallarının anlık görüntüsünü taşır.
 
 Kapsam dışı (YAGNI): eşli King, ihaleli koz, çoklu cihaz senkronu, hesap/giriş, İngilizce arayüz.
 
@@ -93,7 +98,9 @@ Hand {
 }
 RulesConfig {
   pointsPer: { el:-50, kupa:-30, erkek:-60, kiz:-100, rifki:-320, soniki:-180, koz:50 },
-  cezaPerPlayer: 3, kozPerPlayer: 2, maxPerCezaType: 2, enforceQuotas: true
+  cezaPerPlayer: 3, kozPerPlayer: 2, maxPerCezaType: 2, enforceQuotas: true,
+  noKozFirstRound: false,         // ev kuralı: ilk 4 elde koz seçilemez
+  kingThreshold: 10               // istatistik: koz elinde >= bu kadar el = "King"
 }
 ```
 
@@ -109,7 +116,9 @@ doğrulama ve kural değişikliği temiz kalır.
 - `gameTotals(game) → number[4]`
 - `dealerForHand(game, index) → 0..3` = `(firstDealer + index) % 4`
 - `quotaState(game) → { cezaLeft[4], kozLeft[4], typeLeft{...}, handsLeft }`
-- `availableTypes(game, dealer) → { type, enabled, reason }[]` (kota kapalıysa hepsi açık)
+- `availableTypes(game, dealer) → { type, enabled, reason, left }[]` (kota kapalıysa hepsi açık;
+  `noKozFirstRound` açıkken ilk 4 elde koz pasif)
+- `playerStats(games) → [{ name, games, wins, avgTotal, best, worst, kings }]` (biten oyunlardan)
 - `isFinished(game)`
 - `standings(game) → [{ seat, total, rank }]` (eşitlikte aynı sıra)
 - `summaryText(game) → string` (paylaşım metni)
@@ -126,17 +135,24 @@ localStorage anahtarları: `king:v1:current`, `king:v1:history`, `king:v1:settin
    değilse kapatılabilir "Ana Ekrana Ekle" ipucu.
 2. **Yeni oyun**: 4 isim (son oyundan ön dolu, son kullanılan isimler çip olarak), ilk dağıtan
    seçimi veya rastgele, başlat.
-3. **Oyun tablosu**: başlık (el sayacı, dağıtan rozeti), sütun = oyuncu, satır = el (tür çipi +
-   puanlar), altta yapışkan toplam satırı (büyük, işarete göre renkli, sıra), kalan türler şeridi,
-   oyuncu başına kalan koz göstergesi, başparmak erişiminde "El Ekle" butonu; satıra dokun →
-   düzenle/sil.
-4. **El Ekle (alt panel)**: adım 1 tür seçimi (7 kart; kota dolanlar nedeniyle pasif),
-   adım 2 sayım girişi: oyuncu başına −/+ stepper, canlı "Kalan N", "kalanı ver" kısayolu,
+3. **Oyun tablosu** (rakip uygulamalarla ortak dil): başlık (el sayacı "7/20", dağıtan rozeti),
+   "Basit | Detaylı" geçişi. **Basit**: oyuncu başına satır → 2 daire (koz hakkı) + 3 üçgen (ceza
+   hakkı; kullanılanlar dolu), ad, büyük toplam (işarete göre renkli), sıradaki dağıtan vurgulu.
+   **Detaylı**: sütun = oyuncu, satır = el ("3. El · Rıfkı" + puanlar, sıfır "–"), dağıtanın
+   hücresi vurgulu, altta yapışkan toplam satırı. Her iki görünümde altta "Kalanlar: El (1) ·
+   Kupa (2) · … · Koz (6)" şeridi. Başparmak erişiminde "El Ekle"; menüde "Son eli sil", "Skoru oku"
+   (Web Speech, tr-TR), "Paylaş"; satıra dokun → düzenle/sil.
+4. **El Ekle (alt panel)**: başlık "{Dağıtan} konuşuyor · kalan hakkı: 2 ceza, 1 koz".
+   Adım 1 tür seçimi: 7 satır (kart simgesi + ad + "kalan 1"); seçilemeyenler pasif ve nedeni yazılı
+   ("Kupa Almaz 2 kez oynandı", "Ali'nin koz hakkı bitti", "İlk 4 elde koz seçilemez").
+   Adım 2 sayım girişi: oyuncu başına −/+ stepper, canlı "Kalan N", "kalanı ver" kısayolu,
    Rıfkı için tek dokunuş, Koz için isteğe bağlı renk; puan ön izlemesi; toplam tutmadan kaydet pasif.
 5. **Oyun bitti**: sıralama, kazanan vurgusu, toplam=0 kontrolü, "Paylaş" (Web Share metin),
    "Aynı oyuncularla yeni oyun", "Ana ekran". Oyun geçmişe taşınır.
-6. **Ayarlar**: puan değerleri (varsayılana dön), kota zorunluluğu, yedek al / geri yükle,
-   sürüm bilgisi.
+6. **Ayarlar**: puan değerleri (varsayılana dön), kota zorunluluğu, ilk 4 elde koz yasağı,
+   King eşiği, yedek al / geri yükle, sürüm bilgisi.
+7. **İstatistikler** (ana ekrandan): biten oyunlardan oyuncu başına oyun, galibiyet, ortalama,
+   en iyi/en kötü, King sayısı; basit tablo (grafik yok).
 
 ### 4.5 PWA ve iOS detayları
 
@@ -172,3 +188,15 @@ localStorage anahtarları: `king:v1:current`, `king:v1:history`, `king:v1:settin
 - A4 Veri skor tutan telefonda; geçmiş yerel; JSON yedek.
 - A5 Barındırma GitHub Pages `okavak/king-skor`; önizleme Claude Artifact.
 - A6 Açık/koyu tema sistem tercihine göre; görsel yön koyu ağırlıklı.
+
+## 7. Rakip inceleme notları (2026-10-02)
+
+İncelenenler: King Skor Tablosu (Ufukcan Akkaya, 2017'den beri, reklam + abonelik), King Tablosu
+(kingtablosu.com, hesap/arkadaş sistemi, abonelik), King Skor (sedattokay, grup/hesap, sesli skor).
+
+Ortak ve benimsenen kalıplar: 2 daire + 3 üçgen hak göstergesi; Basit/Detaylı geçişi; kalan türler
+satırı; dağıtan vurgusu; "X konuşuyor" el seçimi ve yalnızca seçilebilir türler; son eli sil;
+ayarlanabilir puanlar; "ilk 4 el koz seçilmesin" ev kuralı; "King" istatistiği; sesli skor.
+
+Bilinçli olarak alınmayanlar: hesap/giriş, arkadaş davet ve ortak tablolar (sunucu gerektirir),
+radar grafikler, abonelik/paywall, reklam.
