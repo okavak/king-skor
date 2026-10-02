@@ -215,3 +215,6 @@ radar grafikler, abonelik/paywall, reklam.
 - `deploy.sh` yalnızca temiz `main` dalında çalışır; testler sürüm damgasından önce koşar.
 - Yerel `confirm()` yerine uygulama içi onay diyaloğu.
 - 0 elli devam eden oyun, yeni oyun başlatılınca geçmişe değil çöpe gider; beraberlik "X ve Y berabere".
+- King kuralı (kullanıcı 2026-10-02): koz elinde `kingThreshold` (varsayılan 10) ve üstü el alan oyuncu King yapar;
+  `kingEndsGame` açıkken oyun o anda biter, King yapan çıkar, diğer üçü batar. Normal bitişte toplamı 0 ve üstü
+  olan "çıktı", altı "battı"; bitiş ekranı, paylaşım metni, geçmiş satırı ve istatistik galibiyeti bu sonuca göre.

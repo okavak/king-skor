@@ -21,7 +21,8 @@ export const DEFAULT_RULES = Object.freeze({
   maxPerCezaType: 2,
   enforceQuotas: true,
   noKozFirstRound: false,
-  kingThreshold: 10,
+  kingThreshold: 10,     // koz elinde en az bu kadar el alan "King yapar"
+  kingEndsGame: true,    // King yapan çıkar, diğerleri batar, oyun o anda biter
 });
 
 export const SUITS = { s: '♠', h: '♥', d: '♦', c: '♣' };
@@ -143,8 +144,29 @@ export function availableTypes(game, dealer, { handIndex = game.hands.length, ex
   });
 }
 
+// King: koz elinde eşiğe ulaşan ilk oyuncu. Kural kapalıysa null.
+export function kingSeat(game) {
+  const r = game.rules;
+  if (r.kingEndsGame === false) return null;
+  const threshold = r.kingThreshold ?? DEFAULT_RULES.kingThreshold;
+  for (let i = 0; i < game.hands.length; i++) {
+    const h = game.hands[i];
+    if (h.type !== 'koz') continue;
+    const seat = h.counts.findIndex(c => c >= threshold);
+    if (seat !== -1) return { seat, handIndex: i };
+  }
+  return null;
+}
+
 export function isFinished(game) {
-  return game.hands.length >= handsTotal(game.rules);
+  return game.hands.length >= handsTotal(game.rules) || kingSeat(game) !== null;
+}
+
+// Sonuç: King yapan 'king', diğerleri 'sunk'; normal bitişte toplamı 0 ve üstü 'out' (çıktı), altı 'sunk' (battı).
+export function outcomes(game) {
+  const k = kingSeat(game);
+  if (k) return { king: k.seat, bySeat: game.players.map((_, i) => (i === k.seat ? 'king' : 'sunk')) };
+  return { king: null, bySeat: gameTotals(game).map(t => (t >= 0 ? 'out' : 'sunk')) };
 }
 
 export function standings(game) {
@@ -163,7 +185,12 @@ export function summaryText(game) {
   const st = standings(game);
   const date = new Date(game.finishedAt || game.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
   const lines = st.map(s => `${s.rank}. ${game.players[s.seat]}: ${formatPoints(s.total)}`);
-  return `King skoru, ${date} (${game.hands.length} el)\n${lines.join('\n')}`;
+  const o = outcomes(game);
+  const names = kind => game.players.filter((_, i) => o.bySeat[i] === kind);
+  const verdict = o.king !== null
+    ? `${game.players[o.king]} King yaptı! ${names('sunk').join(', ')} battı.`
+    : `Çıkanlar: ${names('out').join(', ') || 'yok'}. Batanlar: ${names('sunk').join(', ') || 'yok'}.`;
+  return `King skoru, ${date} (${game.hands.length} el)\n${verdict}\n${lines.join('\n')}`;
 }
 
 export function speechText(game) {
@@ -180,13 +207,13 @@ export function playerStats(games) {
   for (const g of games) {
     if (!isValidGame(g)) continue;
     const totals = gameTotals(g);
-    const winners = new Set(standings(g).filter(s => s.rank === 1).map(s => s.seat));
+    const result = outcomes(g).bySeat; // kazanmak = çıkmak (King dahil)
     const threshold = g.rules.kingThreshold ?? DEFAULT_RULES.kingThreshold;
     g.players.forEach((name, seat) => {
       const key = nameKey(name);
       const p = map.get(key) || { name: String(name).trim(), games: 0, wins: 0, sum: 0, best: -Infinity, worst: Infinity, kings: 0 };
       p.games += 1;
-      if (winners.has(seat)) p.wins += 1;
+      if (result[seat] !== 'sunk') p.wins += 1;
       p.sum += totals[seat];
       p.best = Math.max(p.best, totals[seat]);
       p.worst = Math.min(p.worst, totals[seat]);

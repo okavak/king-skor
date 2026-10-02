@@ -36,7 +36,9 @@ Android: Chrome menüsü → "Ana ekrana ekle" / "Uygulamayı yükle".
 | Son İki | son iki el | −180 |
 | Koz | el (13) | +50 |
 
-20 el sonunda toplam 0 olmalıdır; uygulama bunu kontrol eder.
+20 el sonunda toplam 0 olmalıdır; uygulama bunu kontrol eder. Oyun bitince toplamı 0 ve üstü olanlar
+**çıkar**, altında kalanlar **batar**. Koz elinde eşiği (varsayılan 10 el) aşan oyuncu **King yapar**: oyun o anda
+biter, o çıkar, diğer üçü batar. Eşik ve bu kural Ayarlar'dan değiştirilebilir.
 
 ## Geliştirme
 

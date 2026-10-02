@@ -3,6 +3,7 @@ import {
   HAND_TYPES, TYPE_BY_ID, SUITS, PLAYER_COUNT, DEFAULT_RULES, cloneRules, handsTotal, createGame, makeHand,
   handScores, validateCounts, formatPoints, dealerForHand, currentDealer, gameTotals, quotaState, availableTypes,
   isFinished, withHand, withHandReplaced, withoutHand, standings, summaryText, speechText, playerStats, expectedGameTotal,
+  kingSeat, outcomes,
 } from './rules.js';
 import { createStore } from './store.js';
 import { toggleSeat, seatOf, addToRoster, removeFromRoster, ensureInRoster, nameKeyOf } from './roster.js';
@@ -52,6 +53,10 @@ const fmtDate = iso => new Date(iso).toLocaleDateString('tr-TR', { day: 'numeric
 const activeGame = () => state.viewGame || state.game;
 const isStandalone = () => Boolean(window.matchMedia?.('(display-mode: standalone)')?.matches || navigator.standalone === true);
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+const joinTr = list => (list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} ve ${list[list.length - 1]}`);
+const outcomeTag = kind => (kind === 'king' ? '<span class="tag king">King</span>' : kind === 'out' ? '<span class="tag out">Çıktı</span>' : '<span class="tag sunk">Battı</span>');
+const crownSvg = () => '<svg class="crown" viewBox="0 0 64 50" aria-hidden="true"><path d="M5 38 8 13l14 12L32 5l10 20 14-12 3 25Z"/><rect x="6" y="40" width="52" height="7" rx="2.5"/></svg>';
 
 function mcard(typeId, extra = '') {
   const t = TYPE_BY_ID[typeId];
@@ -156,8 +161,9 @@ function installHint() {
 function historyItem(g) {
   const st = standings(g);
   const top = st[0];
-  const winners = st.filter(x => x.rank === 1).map(x => esc(g.players[x.seat]));
-  const who = winners.length > 1 ? `${winners.join(' ve ')} berabere` : `${winners[0]} kazandı`;
+  const o = outcomes(g);
+  const outs = g.players.filter((_, i) => o.bySeat[i] === 'out').map(esc);
+  const who = o.king !== null ? `${esc(g.players[o.king])} King yaptı` : outs.length ? `${joinTr(outs)} çıktı` : 'Kimse çıkamadı';
   const line = st.map(s => `${esc(g.players[s.seat])} ${formatPoints(s.total)}`).join(', ');
   return `<button class="history-item" data-action="open-history" data-id="${esc(g.id)}">
     <span><span class="date">${esc(fmtDate(g.finishedAt || g.createdAt))}, ${g.hands.length} el</span><br><span class="who">${who}</span><br><span class="date">${line}</span></span>
@@ -336,7 +342,10 @@ views.board = () => {
   const totals = gameTotals(g);
   const dealer = currentDealer(g);
   const q = quotaState(g);
-  const title = done ? (readOnly ? `Bitti, ${g.hands.length} el` : `${g.hands.length}/${handsTotal(g.rules)} el girildi`) : `El ${g.hands.length + 1}/${handsTotal(g.rules)}`;
+  const king = kingSeat(g);
+  const title = done
+    ? (readOnly ? (king ? `King, ${g.hands.length} el` : `Bitti, ${g.hands.length} el`) : `${g.hands.length}/${handsTotal(g.rules)} el girildi`)
+    : `El ${g.hands.length + 1}/${handsTotal(g.rules)}`;
   const leader = Math.max(...totals);
 
   const simple = `<div class="panel players">${g.players.map((name, i) => `
@@ -457,16 +466,37 @@ views.finish = () => {
   const g = state.finishedGame;
   if (!g) { state.view = 'home'; return views.home(); }
   const st = standings(g);
-  const sum = gameTotals(g).reduce((a, b) => a + b, 0);
+  const totals = gameTotals(g);
+  const o = outcomes(g);
+  const k = kingSeat(g);
+  const order = k ? [k.seat, ...st.map(x => x.seat).filter(x => x !== k.seat)] : st.map(x => x.seat);
+  const rankOf = seat => st.find(x => x.seat === seat).rank;
+  const outs = g.players.filter((_, i) => o.bySeat[i] === 'out');
+  const sunk = g.players.filter((_, i) => o.bySeat[i] === 'sunk');
+  const sum = totals.reduce((a, b) => a + b, 0);
   const expected = expectedGameTotal(g.rules);
   const full = g.hands.length >= handsTotal(g.rules);
-  const check = !full ? `${g.hands.length} el oynandı, oyun erken bitirildi.`
-    : sum === expected ? `Toplam ${sum}, hesap tutuyor.`
-      : `Toplam ${sum}, beklenen ${expected}: bir el eksik ya da hatalı girilmiş olabilir.`;
+  let hero;
+  if (k) {
+    const h = g.hands[k.handIndex];
+    hero = `<div class="hero king-hero">${crownSvg()}<h2>${esc(g.players[k.seat])} King yaptı</h2>
+      <p>${k.handIndex + 1}. elde ${h.counts[k.seat]} el aldı${h.trumpSuit ? `, koz ${SUITS[h.trumpSuit]}` : ''}. ${esc(joinTr(sunk))} battı.</p></div>`;
+  } else {
+    hero = `<div class="hero"><h2>${outs.length ? `${esc(joinTr(outs))} çıktı` : 'Kimse çıkamadı'}</h2>
+      <p>${sunk.length ? `${esc(joinTr(sunk))} battı.` : 'Kimse batmadı.'}</p></div>`;
+  }
+  const check = k ? `${g.hands.length}. elde King ile bitti.`
+    : !full ? `${g.hands.length} el oynandı, oyun erken bitirildi.`
+      : sum === expected ? `Toplam ${sum}, hesap tutuyor.`
+        : `Toplam ${sum}, beklenen ${expected}: bir el eksik ya da hatalı girilmiş olabilir.`;
   return `<div class="screen">
-  <header class="topbar"><span></span><h1>Oyun bitti</h1><span></span></header>
-  <div class="panel podium">${st.map(s => `<div class="standing${s.rank === 1 ? ' first' : ''}"><span class="rank num">${s.rank}.</span><span class="name">${esc(g.players[s.seat])}</span><span class="total num ${cls(s.total)}">${formatPoints(s.total)}</span></div>`).join('')}</div>
-  <p class="check${full && sum !== expected ? ' bad' : ''}">${esc(check)}</p>
+  <header class="topbar"><span></span><h1>${k ? 'King!' : 'Oyun bitti'}</h1><span></span></header>
+  ${hero}
+  <div class="panel podium">${order.map((seat, i) => `<div class="standing ${o.bySeat[seat]}" style="--i:${i}">
+    <span class="rank num">${rankOf(seat)}.</span>
+    <span class="name">${esc(g.players[seat])} ${outcomeTag(o.bySeat[seat])}</span>
+    <span class="total num ${cls(totals[seat])}">${formatPoints(totals[seat])}</span></div>`).join('')}</div>
+  <p class="check${!k && full && sum !== expected ? ' bad' : ''}">${esc(check)}</p>
   <div class="stack">
     <button class="btn btn-primary btn-block" data-action="share">Sonucu paylaş</button>
     <button class="btn btn-block" data-action="rematch">Aynı oyuncularla yeni oyun</button>
@@ -620,7 +650,8 @@ views.settings = () => {
   <div class="section"><h2>Kurallar</h2><div class="panel" style="padding:0 14px">
     ${row('enforceQuotas', 'Hakları zorunlu tut', 'Oyuncu başına 3 ceza, 2 koz; her ceza en fazla 2 kez')}
     ${row('noKozFirstRound', 'İlk 4 elde koz yok', 'Ev kuralı: ilk turda koz seçilemez')}
-    <div class="toggle-row" style="border-bottom:0"><span><span class="t">King eşiği</span><br><span class="d">Koz elinde bu kadar ve üstü el alan "King yapmış" sayılır</span></span><input class="input num" type="number" inputmode="numeric" min="1" max="13" style="width:76px;text-align:right" aria-label="King eşiği" data-field="kingThreshold" value="${Number.isFinite(s.kingThreshold) ? s.kingThreshold : ''}"></div>
+    ${row('kingEndsGame', 'King oyunu bitirir', 'Koz elinde eşiği aşan oyuncu King yapar: o çıkar, diğer üçü batar, oyun o anda biter')}
+    <div class="toggle-row" style="border-bottom:0"><span><span class="t">King eşiği</span><br><span class="d">Koz elinde en az bu kadar el alan King yapar</span></span><input class="input num" type="number" inputmode="numeric" min="1" max="13" style="width:76px;text-align:right" aria-label="King eşiği" data-field="kingThreshold" value="${Number.isFinite(s.kingThreshold) ? s.kingThreshold : ''}"></div>
   </div></div>
   <div class="stack"><button class="btn btn-primary btn-block" data-action="settings-save">Ayarları kaydet</button><button class="btn btn-ghost" data-action="settings-reset">Varsayılanlara dön</button></div>
   <div class="section"><h2>Veriler</h2><div class="stack" style="margin-top:0">
@@ -639,7 +670,7 @@ views.stats = () => {
   <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>İstatistikler</h1><span></span></header>
   ${stats.length ? `<div class="panel" style="padding:4px 10px;overflow-x:auto"><table class="table"><thead><tr><th>Oyuncu</th><th>Oyun</th><th>Galibiyet</th><th>Ortalama</th><th>En iyi</th><th>En kötü</th><th>King</th></tr></thead><tbody>
     ${stats.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.games}</td><td class="num">${p.wins}</td><td class="num ${cls(p.avgTotal)}">${formatPoints(p.avgTotal)}</td><td class="num ${cls(p.best)}">${formatPoints(p.best)}</td><td class="num ${cls(p.worst)}">${formatPoints(p.worst)}</td><td class="num">${p.kings}</td></tr>`).join('')}
-  </tbody></table></div><p class="hint" style="margin-top:12px">King: koz elinde ${threshold} ve üstü el almak.</p>`
+  </tbody></table></div><p class="hint" style="margin-top:12px">Galibiyet: oyunu çıkarak ya da King yaparak bitirmek. King: koz elinde en az ${threshold} el almak.</p>`
     : '<div class="panel empty">Biten oyun olunca oyuncu istatistikleri burada toplanır.</div>'}
 </div>`;
 };

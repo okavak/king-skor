@@ -280,3 +280,51 @@ test('playerStats keeps the first-seen spelling of multi-word names', () => {
   const g = { ...fullGame(), players: ['Hayrullah Abi', 'Ayşe', 'Mehmet', 'Zeynep'] };
   assert.ok(playerStats([g]).some(s => s.name === 'Hayrullah Abi'));
 });
+
+// ---- King kuralı ve çıktı/battı ----
+import { kingSeat, outcomes } from '../rules.js';
+
+test('kingSeat finds the koz hand where a player reaches the threshold and it ends the game', () => {
+  let g = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
+  g = withHand(g, makeHand('koz', 0, [9, 4, 0, 0]));
+  assert.equal(kingSeat(g), null);
+  assert.equal(isFinished(g), false);
+  g = withHand(g, makeHand('koz', 1, [10, 3, 0, 0]));
+  assert.deepEqual(kingSeat(g), { seat: 0, handIndex: 1 });
+  assert.equal(isFinished(g), true);
+});
+
+test('King is ignored when kingEndsGame is off, and ceza hands never make a King', () => {
+  let g = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false, kingEndsGame: false } });
+  g = withHand(g, makeHand('koz', 0, [13, 0, 0, 0]));
+  assert.equal(kingSeat(g), null);
+  assert.equal(isFinished(g), false);
+  let g2 = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
+  g2 = withHand(g2, makeHand('el', 0, [13, 0, 0, 0]));
+  assert.equal(kingSeat(g2), null);
+});
+
+test('outcomes: King → king + sunk; normal end → out (>= 0) or sunk (< 0)', () => {
+  let g = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
+  g = withHand(g, makeHand('koz', 0, [11, 2, 0, 0]));
+  assert.deepEqual(outcomes(g), { king: 0, bySeat: ['king', 'sunk', 'sunk', 'sunk'] });
+  let h = createGame({ players });
+  h = withHand(h, makeHand('kiz', 0, [0, 4, 0, 0]));
+  h = withHand(h, makeHand('koz', 1, [7, 0, 6, 0]));
+  assert.deepEqual(outcomes(h), { king: null, bySeat: ['out', 'sunk', 'out', 'out'] });
+});
+
+test('summaryText and playerStats reflect outcomes', () => {
+  let g = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false }, now: new Date('2026-10-02T20:00:00Z') });
+  g = withHand(g, makeHand('koz', 0, [11, 2, 0, 0]));
+  assert.match(summaryText(g), /Ali King yaptı/);
+  assert.match(summaryText(g), /Ayşe, Mehmet, Zeynep battı/);
+  const st = playerStats([{ ...g, finishedAt: g.createdAt }]);
+  assert.equal(st.find(p => p.name === 'Ali').wins, 1);
+  assert.equal(st.find(p => p.name === 'Ali').kings, 1);
+  assert.equal(st.find(p => p.name === 'Ayşe').wins, 0);
+  let h = createGame({ players, now: new Date('2026-10-02T20:00:00Z') });
+  h = withHand(h, makeHand('kiz', 0, [0, 4, 0, 0]));
+  assert.match(summaryText(h), /Çıkanlar: Ali, Mehmet, Zeynep/);
+  assert.match(summaryText(h), /Batanlar: Ayşe/);
+});
