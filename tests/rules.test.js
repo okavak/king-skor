@@ -328,3 +328,17 @@ test('summaryText and playerStats reflect outcomes', () => {
   assert.match(summaryText(h), /Çıkanlar: Ali, Mehmet, Zeynep/);
   assert.match(summaryText(h), /Batanlar: Ayşe/);
 });
+
+// ---- dağıtan sırasını düzeltme ----
+import { withFirstDealer } from '../rules.js';
+
+test('withFirstDealer re-stamps every hand and keeps the current dealer consistent', () => {
+  let g = createGame({ players, firstDealer: 0, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
+  for (let i = 0; i < 3; i++) g = withHand(g, makeHand('el', i, [13, 0, 0, 0]));
+  // Masada şu an aslında Ali (0) dağıtıyormuş: 3 el oynandıysa ilk dağıtan 1 olmalı.
+  const fixed = withFirstDealer(g, (0 - 3 + 8) % 4);
+  assert.equal(fixed.firstDealer, 1);
+  assert.equal(currentDealer(fixed), 0);
+  fixed.hands.forEach((h, i) => assert.equal(h.dealer, dealerForHand(fixed, i)));
+  assert.deepEqual(g.hands.map(h => h.dealer), [0, 1, 2], 'original untouched');
+});

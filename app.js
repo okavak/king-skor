@@ -3,7 +3,7 @@ import {
   HAND_TYPES, TYPE_BY_ID, SUITS, PLAYER_COUNT, DEFAULT_RULES, cloneRules, handsTotal, createGame, makeHand,
   handScores, validateCounts, formatPoints, dealerForHand, currentDealer, gameTotals, quotaState, availableTypes,
   isFinished, withHand, withHandReplaced, withoutHand, standings, summaryText, speechText, playerStats, expectedGameTotal,
-  kingSeat, outcomes,
+  kingSeat, outcomes, withFirstDealer,
 } from './rules.js';
 import { createStore } from './store.js';
 import { toggleSeat, seatOf, addToRoster, removeFromRoster, ensureInRoster, nameKeyOf } from './roster.js';
@@ -38,6 +38,8 @@ const state = {
   menuOpen: false,
   draft: { selected: [], firstDealer: 0, adding: false, newName: '', editing: false },
   settings: null,             // ayarlar ekranı taslağı
+  lastTotals: null,           // { id, totals } — kaydedilen elde değişen puanları vurgulamak için
+  imageUrl: null,             // paylaşım görseli önizlemesi (object URL)
 };
 
 const $app = document.getElementById('app');
@@ -101,6 +103,36 @@ function ask(message, { okLabel = 'Evet', danger = false } = {}) {
   });
 }
 
+// Oyun sırasında ekran kararmasın (iOS 16.4+ ana ekran uygulamaları ve Android destekler).
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible' && !store.loadFlag('wakeLockOff')) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch { wakeLock = null; }
+}
+
+function choose(message, options) {
+  return new Promise(resolve => {
+    closeDialog = value => { $dialogRoot.innerHTML = ''; closeDialog = null; resolve(value); };
+    $dialogRoot.innerHTML = `<div class="dialog-backdrop"><div class="dialog" role="dialog" aria-modal="true" aria-label="${esc(message)}">
+      <p>${esc(message)}</p>
+      <div class="choices">${options.map((o, i) => `<button class="btn" data-choice="${i}">${esc(o)}</button>`).join('')}</div>
+      <div class="actions" style="grid-template-columns:1fr"><button class="btn btn-ghost" data-choice="-1">Vazgeç</button></div>
+    </div></div>`;
+    $dialogRoot.onclick = e => {
+      const b = e.target.closest('[data-choice]');
+      if (b) closeDialog(Number(b.dataset.choice));
+      else if (e.target.classList.contains('dialog-backdrop')) closeDialog(-1);
+    };
+  });
+}
+
 function setView(view) {
   state.view = view;
   state.menuOpen = false;
@@ -113,6 +145,7 @@ function render() {
   $app.innerHTML = fn();
   $app.classList.toggle('readonly', Boolean(state.viewGame));
   renderSheet();
+  keepAwake(state.view === 'board' && Boolean(state.game) && !state.viewGame);
 }
 
 function renderSheet() {
@@ -126,7 +159,7 @@ function renderSheet() {
   // Panel bir kez oluşturulur; +/− dokunuşlarında yalnızca içerik değişir, açılış animasyonu tekrar oynamaz.
   let sheet = $sheetRoot.querySelector('.sheet');
   if (!sheet) {
-    $sheetRoot.innerHTML = '<div class="sheet-backdrop" data-action="sheet-close"></div><div class="sheet" role="dialog" aria-modal="true"></div>';
+    $sheetRoot.innerHTML = '<div class="sheet-backdrop" data-action="sheet-backdrop"></div><div class="sheet" role="dialog" aria-modal="true"></div>';
     sheet = $sheetRoot.querySelector('.sheet');
   }
   const scroll = sheet.querySelector('.sheet-body')?.scrollTop || 0;
@@ -343,6 +376,9 @@ views.board = () => {
   const dealer = currentDealer(g);
   const q = quotaState(g);
   const king = kingSeat(g);
+  const prev = state.lastTotals && state.lastTotals.id === g.id ? state.lastTotals.totals : null;
+  const changed = i => Boolean(prev && prev[i] !== totals[i]);
+  state.lastTotals = { id: g.id, totals };
   const title = done
     ? (readOnly ? (king ? `King, ${g.hands.length} el` : `Bitti, ${g.hands.length} el`) : `${g.hands.length}/${handsTotal(g.rules)} el girildi`)
     : `El ${g.hands.length + 1}/${handsTotal(g.rules)}`;
@@ -352,7 +388,7 @@ views.board = () => {
     <div class="player-row${!done && i === dealer ? ' dealer' : ''}">
       ${rights(g, i)}
       <span><span class="player-name">${esc(name)}</span>${!done && i === dealer ? '<span class="player-sub">dağıtıyor</span>' : ''}</span>
-      <span class="total num ${cls(totals[i])}"${g.hands.length && totals[i] === leader ? ' style="font-weight:800"' : ''}>${formatPoints(totals[i])}</span>
+      <span class="total num ${cls(totals[i])}${changed(i) ? ' pulse' : ''}"${g.hands.length && totals[i] === leader ? ' style="font-weight:800"' : ''}>${formatPoints(totals[i])}</span>
     </div>`).join('')}</div>
     ${g.hands.length ? lastHandLine(g, readOnly) : '<p class="hint" style="text-align:center;margin-top:14px">Henüz el oynanmadı.</p>'}`;
 
@@ -381,7 +417,9 @@ views.board = () => {
   const menu = state.menuOpen ? `<div class="menu-backdrop" data-action="menu-close"></div><div class="menu" role="menu">
     ${!readOnly && g.hands.length ? '<button role="menuitem" data-action="undo-last">Son eli sil</button>' : ''}
     <button role="menuitem" data-action="speak">Skoru sesli oku</button>
-    <button role="menuitem" data-action="share">Paylaş</button>
+    <button role="menuitem" data-action="share">Metin olarak paylaş</button>
+    <button role="menuitem" data-action="share-image">Tabloyu görsel paylaş</button>
+    ${!readOnly && !done ? '<button role="menuitem" data-action="fix-dealer">Dağıtan sırasını düzelt</button>' : ''}
     ${!readOnly && !done && g.hands.length ? '<button role="menuitem" data-action="finish-early">Oyunu şimdi bitir</button>' : ''}
     ${readOnly
       ? `<button role="menuitem" class="danger" data-action="delete-history" data-id="${esc(g.id)}">Bu oyunu geçmişten sil</button>`
@@ -439,7 +477,8 @@ function sheetParts() {
           <span class="who"><span class="n">${esc(n)}${i === dealer ? ' <span style="color:var(--muted);font-weight:400;font-size:13px">dağıtan</span>' : ''}</span>
             <span class="pts num ${cls(sh.counts[i] * per)}">${sh.counts[i] ? formatPoints(sh.counts[i] * per) : '–'}</span>
             <button class="fill-btn" data-action="fill" data-index="${i}"${remaining > 0 ? '' : ' style="visibility:hidden" tabindex="-1"'}>Kalanı ver (+${Math.max(remaining, 0)})</button></span>
-          <span class="stepper"><button data-action="dec" data-index="${i}" aria-label="${esc(n)} azalt"${sh.counts[i] <= 0 ? ' disabled' : ''}>−</button><span class="val num">${sh.counts[i]}</span><button data-action="inc" data-index="${i}" aria-label="${esc(n)} artır"${remaining <= 0 ? ' disabled' : ''}>+</button></span>
+          <span class="stepper"><button data-action="dec" data-index="${i}" aria-label="${esc(n)} azalt"${sh.counts[i] <= 0 ? ' disabled' : ''}>−</button><button class="val num" data-action="pick-count" data-index="${i}" aria-label="${esc(n)} için sayı seç" aria-expanded="${sh.pickFor === i}">${sh.counts[i]}</button><button data-action="inc" data-index="${i}" aria-label="${esc(n)} artır"${remaining <= 0 ? ' disabled' : ''}>+</button></span>
+          ${sh.pickFor === i ? `<div class="numpad" role="group" aria-label="${esc(n)} için sayı">${Array.from({ length: t.total + 1 }, (_, v) => `<button class="numkey num${v === sh.counts[i] ? ' on' : ''}" data-action="set-count" data-index="${i}" data-value="${v}"${v > sh.counts[i] + remaining ? ' disabled' : ''}>${v}</button>`).join('')}</div>` : ''}
         </div>`).join('');
     body = suits + rows;
     const status = v.ok ? `<span class="status ok">Tamam, ${t.total} ${esc(t.unit)} dağıtıldı</span>` : `<span class="status${remaining < 0 ? ' err' : ''}">${esc(v.error)}</span>`;
@@ -498,7 +537,8 @@ views.finish = () => {
     <span class="total num ${cls(totals[seat])}">${formatPoints(totals[seat])}</span></div>`).join('')}</div>
   <p class="check${!k && full && sum !== expected ? ' bad' : ''}">${esc(check)}</p>
   <div class="stack">
-    <button class="btn btn-primary btn-block" data-action="share">Sonucu paylaş</button>
+    <button class="btn btn-primary btn-block" data-action="share-image">Tabloyu görsel paylaş</button>
+    <button class="btn btn-block" data-action="share">Metin olarak paylaş</button>
     <button class="btn btn-block" data-action="rematch">Aynı oyuncularla yeni oyun</button>
     <button class="btn btn-ghost btn-block" data-action="reopen-last">Son eli düzelt</button>
     <button class="btn btn-ghost btn-block" data-action="go" data-view="home">Ana ekran</button>
@@ -511,31 +551,73 @@ Object.assign(actions, {
   'board-mode'({ mode }) { state.boardMode = mode; render(); },
   'open-sheet'() { state.menuOpen = false; state.sheet = { step: 'type', type: null, counts: null, trumpSuit: null, editIndex: null }; render(); },
   'sheet-close'() { state.sheet = null; render(); },
+  'sheet-backdrop'() {
+    const sh = state.sheet;
+    if (sh && sh.step === 'counts' && sh.counts.some(c => c > 0)) return toast('Girilen sayılar duruyor; kapatmak için sağ üstteki × düğmesi');
+    state.sheet = null;
+    render();
+  },
+  'undo-save'() {
+    const g = state.game;
+    if (!g || !g.hands.length || state.view !== 'board' || state.viewGame) return;
+    state.game = withoutHand(g, g.hands.length - 1);
+    persist();
+    render();
+    toast('Son el geri alındı');
+  },
   'sheet-back'() { state.sheet.step = 'type'; render(); },
   'pick-type'({ type }) {
     const sh = state.sheet;
     const prev = sh.editIndex !== null ? state.game.hands[sh.editIndex] : null;
-    const keep = prev && prev.type === type;
+    const keep = prev && TYPE_BY_ID[prev.type].total === TYPE_BY_ID[type].total && type !== 'rifki';
     sh.type = type;
     sh.counts = keep ? [...prev.counts] : new Array(PLAYER_COUNT).fill(0);
-    sh.trumpSuit = keep ? prev.trumpSuit || null : null;
+    sh.trumpSuit = keep && type === 'koz' ? prev.trumpSuit || null : null;
+    sh.pickFor = null;
     sh.step = 'counts';
     render();
   },
   inc({ index }) {
     const sh = state.sheet;
     const sum = sh.counts.reduce((a, b) => a + b, 0);
-    if (sum < TYPE_BY_ID[sh.type].total) { sh.counts[Number(index)] += 1; renderSheet(); }
+    if (sum < TYPE_BY_ID[sh.type].total) { sh.counts[Number(index)] += 1; sh.pickFor = null; renderSheet(); }
   },
   dec({ index }) {
     const sh = state.sheet;
-    if (sh.counts[Number(index)] > 0) { sh.counts[Number(index)] -= 1; renderSheet(); }
+    if (sh.counts[Number(index)] > 0) { sh.counts[Number(index)] -= 1; sh.pickFor = null; renderSheet(); }
   },
   fill({ index }) {
     const sh = state.sheet;
     const sum = sh.counts.reduce((a, b) => a + b, 0);
     sh.counts[Number(index)] += Math.max(0, TYPE_BY_ID[sh.type].total - sum);
+    sh.pickFor = null;
     renderSheet();
+  },
+  'pick-count'({ index }) {
+    const sh = state.sheet;
+    sh.pickFor = sh.pickFor === Number(index) ? null : Number(index);
+    renderSheet();
+  },
+  'set-count'({ index, value }) {
+    const sh = state.sheet;
+    const i = Number(index);
+    const others = sh.counts.reduce((a, b, k) => (k === i ? a : a + b), 0);
+    sh.counts[i] = Math.max(0, Math.min(Number(value), TYPE_BY_ID[sh.type].total - others));
+    sh.pickFor = null;
+    renderSheet();
+  },
+  async 'fix-dealer'() {
+    state.menuOpen = false;
+    render();
+    const g = state.game;
+    const seat = await choose('Şu an kim dağıtıyor?', g.players);
+    if (seat < 0) return;
+    const firstDealer = ((seat - g.hands.length) % PLAYER_COUNT + PLAYER_COUNT) % PLAYER_COUNT;
+    if (firstDealer === g.firstDealer) return toast('Dağıtan sırası zaten böyle');
+    state.game = withFirstDealer(g, firstDealer);
+    persist();
+    render();
+    toast(`Dağıtan sırası düzeltildi: ${g.players[seat]} dağıtıyor`);
   },
   'pick-rifki'({ index }) { state.sheet.counts = state.sheet.counts.map((_, i) => (i === Number(index) ? 1 : 0)); renderSheet(); },
   'pick-suit'({ suit }) { state.sheet.trumpSuit = state.sheet.trumpSuit === suit ? null : suit; renderSheet(); },
@@ -554,7 +636,8 @@ Object.assign(actions, {
     persist();
     if (isFinished(next)) return finishGame(next);
     render();
-    toast(editing ? 'El güncellendi' : `${handIndex + 1}. el kaydedildi`);
+    if (editing) toast('El güncellendi');
+    else toast(`${handIndex + 1}. el kaydedildi`, { label: 'Geri al', action: 'undo-save' });
   },
   'edit-hand'({ index }) {
     if (state.viewGame) return;
@@ -651,6 +734,7 @@ views.settings = () => {
     ${row('enforceQuotas', 'Hakları zorunlu tut', 'Oyuncu başına 3 ceza, 2 koz; her ceza en fazla 2 kez')}
     ${row('noKozFirstRound', 'İlk 4 elde koz yok', 'Ev kuralı: ilk turda koz seçilemez')}
     ${row('kingEndsGame', 'King oyunu bitirir', 'Koz elinde eşiği aşan oyuncu King yapar: o çıkar, diğer üçü batar, oyun o anda biter')}
+    <div class="toggle-row"><span><span class="t">Oyun sırasında ekran açık kalsın</span><br><span class="d">Tablo açıkken telefon kararmaz; bu cihaza özel</span></span><button class="switch" role="switch" aria-checked="${!store.loadFlag('wakeLockOff')}" data-action="wake-toggle" aria-label="Oyun sırasında ekran açık kalsın"></button></div>
     <div class="toggle-row" style="border-bottom:0"><span><span class="t">King eşiği</span><br><span class="d">Koz elinde en az bu kadar el alan King yapar</span></span><input class="input num" type="number" inputmode="numeric" min="1" max="13" style="width:76px;text-align:right" aria-label="King eşiği" data-field="kingThreshold" value="${Number.isFinite(s.kingThreshold) ? s.kingThreshold : ''}"></div>
   </div></div>
   <div class="stack"><button class="btn btn-primary btn-block" data-action="settings-save">Ayarları kaydet</button><button class="btn btn-ghost" data-action="settings-reset">Varsayılanlara dön</button></div>
@@ -674,6 +758,87 @@ views.stats = () => {
     : '<div class="panel empty">Biten oyun olunca oyuncu istatistikleri burada toplanır.</div>'}
 </div>`;
 };
+
+// ---------- skor tablosu görseli ----------
+function renderScoreCanvas(g) {
+  const W = 760;
+  const rowH = 46;
+  const top = 168;
+  const rows = g.hands.length;
+  const H = top + rowH * (rows + 1) + 96;
+  const scale = 2;
+  const c = document.createElement('canvas');
+  c.width = W * scale;
+  c.height = H * scale;
+  const x = c.getContext('2d');
+  x.scale(scale, scale);
+  const font = (w, px) => `${w} ${px}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  const NAVY = '#1B2236', INK = '#F2EFE6', MUTED = '#8E97B3', GOLD = '#E9B949', RED = '#F0565E', LINE = 'rgba(255,255,255,.1)';
+  x.fillStyle = NAVY; x.fillRect(0, 0, W, H);
+  x.fillStyle = INK; x.font = font(800, 30); x.fillText('King Skor', 32, 54);
+  x.fillStyle = MUTED; x.font = font(400, 16); x.fillText(`${fmtDate(g.finishedAt || g.createdAt)}, ${rows} el`, 32, 80);
+  const o = outcomes(g);
+  const names = kind => g.players.filter((_, i) => o.bySeat[i] === kind);
+  const verdict = o.king !== null ? `${g.players[o.king]} King yaptı. ${joinTr(names('sunk'))} battı.`
+    : (g.finishedAt ? `${names('out').length ? `${joinTr(names('out'))} çıktı.` : 'Kimse çıkamadı.'} ${names('sunk').length ? `${joinTr(names('sunk'))} battı.` : ''}` : 'Oyun sürüyor');
+  x.fillStyle = GOLD; x.font = font(600, 18); x.fillText(verdict, 32, 112);
+  const colW = 128, firstCol = W - 32 - colW * 4;
+  const colRight = i => firstCol + colW * (i + 1);
+  x.fillStyle = MUTED; x.font = font(600, 15); x.textAlign = 'right';
+  g.players.forEach((n, i) => x.fillText(n.length > 12 ? `${n.slice(0, 11)}…` : n, colRight(i), top - 14));
+  x.textAlign = 'left';
+  const totals = gameTotals(g);
+  g.hands.forEach((h, idx) => {
+    const y = top + idx * rowH;
+    if (idx % 2 === 0) { x.fillStyle = 'rgba(255,255,255,.035)'; x.fillRect(24, y, W - 48, rowH); }
+    x.fillStyle = 'rgba(233,185,73,.16)'; x.fillRect(colRight(h.dealer) - colW + 8, y, colW - 8, rowH);
+    x.fillStyle = INK; x.font = font(500, 15);
+    x.fillText(`${idx + 1}. ${TYPE_BY_ID[h.type].short}${h.trumpSuit ? ` ${SUITS[h.trumpSuit]}` : ''}`, 32, y + 29);
+    x.textAlign = 'right'; x.font = font(700, 17);
+    handScores(h, g.rules).forEach((sc, i) => {
+      x.fillStyle = sc < 0 ? RED : sc > 0 ? GOLD : MUTED;
+      x.fillText(sc === 0 ? '–' : String(sc), colRight(i) - 10, y + 30);
+    });
+    x.textAlign = 'left';
+  });
+  const ty = top + rows * rowH;
+  x.fillStyle = LINE; x.fillRect(24, ty, W - 48, 2);
+  x.fillStyle = INK; x.font = font(700, 17); x.fillText('Toplam', 32, ty + 31);
+  x.textAlign = 'right'; x.font = font(800, 20);
+  totals.forEach((t, i) => { x.fillStyle = t < 0 ? RED : t > 0 ? GOLD : MUTED; x.fillText(String(t), colRight(i) - 10, ty + 32); });
+  x.textAlign = 'left';
+  x.fillStyle = MUTED; x.font = font(400, 13); x.fillText('okavak.github.io/king-skor', 32, H - 28);
+  return c;
+}
+
+async function openImageSheet(g) {
+  const canvas = renderScoreCanvas(g);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) return toast('Görsel oluşturulamadı');
+  if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
+  state.imageUrl = URL.createObjectURL(blob);
+  state.imageBlob = blob;
+  state.imageName = `king-skor-${(g.finishedAt || g.createdAt).slice(0, 10)}.png`;
+  $dialogRoot.innerHTML = `<div class="dialog-backdrop"><div class="dialog image-dialog" role="dialog" aria-modal="true" aria-label="Skor tablosu görseli">
+    <img src="${state.imageUrl}" alt="Skor tablosu" class="image-preview">
+    <div class="actions"><button class="btn" data-action="image-close">Kapat</button><button class="btn btn-primary" data-action="image-share">Paylaş</button></div>
+  </div></div>`;
+}
+
+async function shareImageFile() {
+  const file = new File([state.imageBlob], state.imageName, { type: 'image/png' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'King skoru' }); return; }
+    catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = state.imageUrl;
+  a.download = state.imageName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  toast('Görsel indirildi');
+}
 
 function speak(text) {
   if (!('speechSynthesis' in window)) return toast('Bu cihazda sesli okuma desteklenmiyor');
@@ -718,6 +883,17 @@ Object.assign(actions, {
     const g = state.view === 'finish' ? state.finishedGame : activeGame();
     if (g) share(summaryText(g));
   },
+  'share-image'() {
+    state.menuOpen = false;
+    render();
+    const g = state.view === 'finish' ? state.finishedGame : activeGame();
+    if (!g) return;
+    if (!g.hands.length) return toast('Henüz el oynanmadı');
+    openImageSheet(g);
+  },
+  'image-share'() { shareImageFile(); },
+  'image-close'() { $dialogRoot.innerHTML = ''; },
+  'wake-toggle'() { store.setFlag('wakeLockOff', !store.loadFlag('wakeLockOff')); render(); keepAwake(false); },
   toggle({ key }) { state.settings[key] = !state.settings[key]; render(); },
   'settings-save'() {
     const s = state.settings;
@@ -778,5 +954,6 @@ if ('serviceWorker' in navigator && !window.__KING_BUNDLE__) {
     }).catch(() => {});
   });
 }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(state.view === 'board' && Boolean(state.game) && !state.viewGame); });
 if (storage.memory) toast('Tarayıcı depolamayı engelliyor: uygulama kapanınca oyun kaybolur.', { sticky: true });
 render();

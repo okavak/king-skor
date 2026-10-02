@@ -18,8 +18,12 @@ Android: Chrome menüsü → "Ana ekrana ekle" / "Uygulamayı yükle".
 - **El ekle**: dağıtan otomatik gelir; listede yalnızca seçilebilecek türler görünür (her ceza en fazla
   2 kez, oyuncu başına 3 ceza + 2 koz). Sayıları −/+ ile girin, "Kalanı ver" ile tamamlayın.
 - **Oyun bitti**: sonucu paylaşın, aynı oyuncularla yeni oyun açın ya da "Son eli düzelt" ile son eli değiştirin.
-- **Düzenle**: Detaylı görünümde satıra dokunun ya da Basit görünümde "Düzenle".
-- **Menü (⋯)**: son eli sil, skoru sesli oku, paylaş, oyunu bitir.
+- **Yanlış kaydı düzeltme**: kaydettikten hemen sonra bildirimdeki "Geri al"; Basit görünümde "Düzenle";
+  Detaylı görünümde satıra dokunun; sayı girerken değere dokununca 0–13 hızlı seçim şeridi açılır; menüde
+  "Dağıtan sırasını düzelt" ile oyun ortasında dağıtan düzeltilir; bitişte "Son eli düzelt".
+- **Menü (⋯)**: son eli sil, skoru sesli oku, metin ya da görsel (PNG) olarak paylaş, dağıtan sırasını düzelt,
+  oyunu bitir.
+- **Ekran**: tablo açıkken telefon kararmaz (Ayarlar'dan kapatılabilir).
 - **Ayarlar**: puanlar, kural anahtarları, yedek al / geri yükle.
 - **Not**: Veriler telefonda saklanır. Uygulamayı önce ana ekrana kurun, oyuncuları sonra ekleyin; Safari'de
   girilen veriler kurulu uygulamaya geçmez.

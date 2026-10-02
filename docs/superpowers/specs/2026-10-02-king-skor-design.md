@@ -218,3 +218,7 @@ radar grafikler, abonelik/paywall, reklam.
 - King kuralı (kullanıcı 2026-10-02): koz elinde `kingThreshold` (varsayılan 10) ve üstü el alan oyuncu King yapar;
   `kingEndsGame` açıkken oyun o anda biter, King yapan çıkar, diğer üçü batar. Normal bitişte toplamı 0 ve üstü
   olan "çıktı", altı "battı"; bitiş ekranı, paylaşım metni, geçmiş satırı ve istatistik galibiyeti bu sonuca göre.
+- Masa başı iyileştirmeleri (2026-10-02): kayıt bildiriminde "Geri al"; sayı girişinde değere dokununca 0–N hızlı
+  seçim şeridi; düzenlerken aynı toplamlı türler arasında sayılar korunur; panel dışına dokununca girilen sayılar
+  silinmez; oyun ortasında dağıtan sırası düzeltme (`withFirstDealer`); değişen toplamlarda nabız animasyonu;
+  skor tablosunu PNG olarak paylaşma (canvas, önizleme + Web Share); Screen Wake Lock (ayarla kapatılabilir).

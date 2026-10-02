@@ -103,6 +103,13 @@ export function withoutHand(game, index) {
   return { ...game, hands };
 }
 
+// İlk dağıtanı değiştirir ve tüm ellerin dağıtanını yeniden damgalar (oyun ortası düzeltme).
+export function withFirstDealer(game, firstDealer) {
+  const next = { ...game, firstDealer };
+  next.hands = game.hands.map((h, i) => ({ ...h, dealer: dealerForHand(next, i) }));
+  return next;
+}
+
 export function gameTotals(game) {
   const totals = new Array(PLAYER_COUNT).fill(0);
   for (const h of game.hands) handScores(h, game.rules).forEach((s, i) => { totals[i] += s; });
