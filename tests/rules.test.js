@@ -258,3 +258,25 @@ test('isValidGame accepts real games and rejects junk', () => {
   assert.equal(isValidGame({ ...createGame({ players }), hands: [{ type: 'yok', dealer: 0, counts: [1, 0, 0, 0] }] }), false);
   assert.equal(isValidGame({ ...createGame({ players }), hands: [{ type: 'el', dealer: 9, counts: [13, 0, 0, 0] }] }), false);
 });
+
+// ---- İnceleme düzeltmeleri ----
+test('withoutHand re-stamps dealers so hands[i].dealer === dealerForHand(g, i)', () => {
+  let g = createGame({ players, firstDealer: 0, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
+  for (let i = 0; i < 5; i++) g = withHand(g, makeHand('koz', dealerForHand(g, i), [13, 0, 0, 0]));
+  const g2 = withoutHand(g, 2);
+  assert.equal(g2.hands.length, 4);
+  g2.hands.forEach((h, i) => assert.equal(h.dealer, dealerForHand(g2, i), `hand ${i}`));
+  assert.deepEqual(quotaState(g2).kozLeft, [1, 1, 1, 1]);
+  assert.equal(currentDealer(g2), 0);
+});
+
+test('noKozFirstRound applies even when quotas are off', () => {
+  const g = createGame({ players, rules: { ...DEFAULT_RULES, enforceQuotas: false, noKozFirstRound: true } });
+  assert.equal(availableTypes(g, 0).find(x => x.type === 'koz').enabled, false);
+  assert.equal(availableTypes(g, 0).find(x => x.type === 'el').enabled, true);
+});
+
+test('playerStats keeps the first-seen spelling of multi-word names', () => {
+  const g = { ...fullGame(), players: ['Hayrullah Abi', 'Ayşe', 'Mehmet', 'Zeynep'] };
+  assert.ok(playerStats([g]).some(s => s.name === 'Hayrullah Abi'));
+});

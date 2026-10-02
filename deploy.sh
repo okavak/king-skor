@@ -11,10 +11,19 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 OWNER="$(gh api user --jq .login)"
 
+if [ "$(git branch --show-current)" != "main" ]; then
+  echo "Yayın main dalından yapılır. Önce: git checkout main" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Çalışma ağacında commit edilmemiş değişiklik var; önce commit edin." >&2
+  exit 1
+fi
+
+node --test >/dev/null
 VERSION="$(date +%Y.%m.%d-%H%M)"
 sed -i '' "s/^const VERSION = .*/const VERSION = '${VERSION}';/" sw.js
 sed -i '' "s/^export const APP_VERSION = .*/export const APP_VERSION = '${VERSION}';/" version.js
-node --test >/dev/null
 git add -A
 git commit -q -m "release: ${VERSION}" || true
 

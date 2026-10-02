@@ -5,6 +5,7 @@ import {
   isFinished, withHand, withHandReplaced, withoutHand, standings, summaryText, speechText, playerStats, expectedGameTotal,
 } from './rules.js';
 import { createStore } from './store.js';
+import { toggleSeat, seatOf, addToRoster, removeFromRoster, ensureInRoster, nameKeyOf } from './roster.js';
 import { APP_VERSION } from './version.js';
 
 // ---------- depolama ----------
@@ -34,7 +35,7 @@ const state = {
   boardMode: 'simple',        // simple | detail
   sheet: null,                // { step: 'type'|'counts', type, counts, trumpSuit, editIndex }
   menuOpen: false,
-  draft: { names: ['', '', '', ''], firstDealer: 0 },
+  draft: { selected: [], firstDealer: 0, adding: false, newName: '', editing: false },
   settings: null,             // ayarlar ekranı taslağı
 };
 
@@ -47,7 +48,7 @@ const $dialogRoot = document.getElementById('dialog-root');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cls = n => (n < 0 ? 'neg' : n > 0 ? 'pos' : 'zero');
 const lower = s => String(s).trim().toLocaleLowerCase('tr-TR');
-const fmtDate = iso => new Date(iso).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' });
+const fmtDate = iso => new Date(iso).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' });
 const activeGame = () => state.viewGame || state.game;
 const isStandalone = () => Boolean(window.matchMedia?.('(display-mode: standalone)')?.matches || navigator.standalone === true);
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -88,7 +89,7 @@ function ask(message, { okLabel = 'Evet', danger = false } = {}) {
       if (b) closeDialog(b.dataset.dialog === 'yes');
       else if (e.target.classList.contains('dialog-backdrop')) closeDialog(false);
     };
-    $dialogRoot.querySelector('[data-dialog="yes"]').focus();
+    $dialogRoot.querySelector('[data-dialog="no"]').focus();
   });
 }
 
@@ -133,17 +134,19 @@ const actions = {};
 
 function installHint() {
   const text = isIOS()
-    ? 'iPhone\'a kurmak için Safari\'de Paylaş düğmesine basın, "Ana Ekrana Ekle" seçin. Tam ekran ve çevrimdışı çalışır.'
-    : 'Telefona kurmak için tarayıcı menüsünden "Ana ekrana ekle" ya da "Uygulamayı yükle" seçin.';
+    ? 'Önce kurun: Safari\'de Paylaş düğmesine basıp "Ana Ekrana Ekle" seçin. Kurulu uygulama tam ekran ve çevrimdışı çalışır; Safari\'de girilen veriler ona geçmez.'
+    : 'Önce kurun: tarayıcı menüsünden "Ana ekrana ekle" ya da "Uygulamayı yükle" seçin. Tarayıcıda girilen veriler kurulu uygulamaya geçmez.';
   return `<div class="install-hint"><span>${text}</span><button class="icon-btn" data-action="dismiss-hint" aria-label="İpucunu kapat">×</button></div>`;
 }
 
 function historyItem(g) {
   const st = standings(g);
   const top = st[0];
+  const winners = st.filter(x => x.rank === 1).map(x => esc(g.players[x.seat]));
+  const who = winners.length > 1 ? `${winners.join(' ve ')} berabere` : `${winners[0]} kazandı`;
   const line = st.map(s => `${esc(g.players[s.seat])} ${formatPoints(s.total)}`).join(', ');
   return `<button class="history-item" data-action="open-history" data-id="${esc(g.id)}">
-    <span><span class="date">${esc(fmtDate(g.finishedAt || g.createdAt))}, ${g.hands.length} el</span><br><span class="who">${esc(g.players[top.seat])} kazandı</span><br><span class="date">${line}</span></span>
+    <span><span class="date">${esc(fmtDate(g.finishedAt || g.createdAt))}, ${g.hands.length} el</span><br><span class="who">${who}</span><br><span class="date">${line}</span></span>
     <span class="total num ${cls(top.total)}" style="font-size:20px">${formatPoints(top.total)}</span>
   </button>`;
 }
@@ -169,20 +172,33 @@ views.home = () => {
 
 views.new = () => {
   const d = state.draft;
-  const used = new Set(d.names.map(lower).filter(Boolean));
-  const recent = store.loadNames().filter(n => !used.has(lower(n))).slice(0, 12);
-  return `<div class="screen">
-  <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>Yeni oyun</h1><span></span></header>
-  <p class="hint">Oyuncuları masadaki oturma sırasıyla, saat yönünde yazın.</p>
-  ${[0, 1, 2, 3].map(i => `<div class="field"><label for="name-${i}">${i + 1}. oyuncu</label><input class="input" id="name-${i}" data-field="name" data-index="${i}" value="${esc(d.names[i])}" placeholder="İsim" autocomplete="off" autocapitalize="words" enterkeyhint="next"></div>`).join('')}
-  ${recent.length ? `<div class="chips">${recent.map(n => `<button class="chip" data-action="chip" data-name="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
-  <div class="section"><h2>İlk dağıtan</h2>
-    <div class="dealer-pick" id="dealer-pick">${[0, 1, 2, 3].map(i => `<button data-action="pick-dealer" data-index="${i}" aria-pressed="${d.firstDealer === i}">${esc(d.names[i].trim() || `${i + 1}. oyuncu`)}</button>`).join('')}</div>
+  const roster = store.loadNames();
+  const full = d.selected.length === PLAYER_COUNT;
+  const rows = roster.map(n => {
+    const seat = seatOf(d.selected, n);
+    return `<div class="roster-row">
+      <button class="roster-pick" data-action="seat-toggle" data-name="${esc(n)}" aria-pressed="${seat > 0}"${!seat && full ? ' disabled' : ''}>
+        <span class="roster-name">${esc(n)}</span>
+        <span class="seat${seat ? ' on' : ''}" aria-label="${seat ? `${seat}. koltuk` : 'seçili değil'}">${seat || ''}</span>
+      </button>
+      ${d.editing ? `<button class="icon-btn roster-remove" data-action="roster-remove" data-name="${esc(n)}" aria-label="${esc(n)} listeden çıkar">×</button>` : ''}
+    </div>`;
+  }).join('');
+  const addRow = d.adding
+    ? `<form class="roster-add" data-form="roster-add"><input class="input" id="new-name" data-field="new-name" value="${esc(d.newName)}" placeholder="İsim" autocomplete="off" autocapitalize="words" enterkeyhint="done" aria-label="Yeni oyuncu adı"><button class="btn btn-primary" type="submit">Ekle</button></form>`
+    : `<button class="roster-row roster-pick add" data-action="roster-add-open"><span class="roster-name">Yeni oyuncu ekle</span><span class="seat plus" aria-hidden="true">+</span></button>`;
+  const dealerPick = full ? `<div class="section"><h2>İlk dağıtan</h2>
+    <div class="dealer-pick">${d.selected.map((n, i) => `<button data-action="pick-dealer" data-index="${i}" aria-pressed="${d.firstDealer === i}">${esc(n)}</button>`).join('')}</div>
     <div class="stack" style="margin-top:10px"><button class="btn btn-ghost" data-action="random-dealer">Rastgele seç</button></div>
     <p class="hint" style="margin-top:12px">Hatırlatma: ilk eli karo ikilisi olan oyuncu başlatır.</p>
-  </div>
-  <div class="stack"><button class="btn btn-primary btn-block" data-action="start-game">Oyunu başlat</button></div>
-</div>`;
+  </div>` : '';
+  return `<div class="screen has-bar">
+  <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>Yeni oyun</h1>${roster.length ? `<button class="icon-btn edit-toggle" data-action="roster-edit-toggle" aria-pressed="${d.editing}">${d.editing ? 'Bitti' : 'Düzenle'}</button>` : '<span></span>'}</header>
+  <p class="hint">${roster.length ? 'Oyuncuları oturma sırasıyla, saat yönünde dokunarak seçin.' : 'Önce oyuncuları listeye ekleyin; sonraki oyunlarda listeden seçersiniz.'}</p>
+  <div class="panel roster">${rows}${addRow}</div>
+  ${dealerPick}
+</div>
+<div class="bottom-bar"><div class="inner"><button class="btn btn-primary btn-block" data-action="start-game"${full ? '' : ' disabled'}>Oyunu başlat</button><span class="who">${full ? `${esc(d.selected[d.firstDealer])} dağıtacak` : `${d.selected.length}/4 oyuncu seçildi`}</span></div></div>`;
 };
 
 // ---------- eylemler (ana ekran, yeni oyun) ----------
@@ -195,29 +211,57 @@ Object.assign(actions, {
   continue() { state.viewGame = null; setView('board'); },
   'new-game'() {
     const last = state.game || store.loadHistory()[0];
-    state.draft = { names: last ? [...last.players] : ['', '', '', ''], firstDealer: last ? (last.firstDealer + 1) % PLAYER_COUNT : 0 };
+    if (last) {
+      const roster = store.loadNames();
+      const grown = ensureInRoster(roster, last.players);
+      if (grown !== roster) store.saveNames(grown);
+    }
+    state.draft = { selected: last ? [...last.players] : [], firstDealer: last ? (last.firstDealer + 1) % PLAYER_COUNT : 0, adding: false, newName: '', editing: false };
     setView('new');
   },
-  chip({ name }) {
-    const i = state.draft.names.findIndex(n => !n.trim());
-    if (i === -1) return toast('Dört oyuncu da yazılı; önce birini silin');
-    state.draft.names[i] = name;
+  'seat-toggle'({ name }) {
+    const d = state.draft;
+    d.selected = toggleSeat(d.selected, name);
+    if (d.firstDealer >= d.selected.length) d.firstDealer = 0;
     render();
   },
+  'roster-add-open'() {
+    state.draft.adding = true;
+    state.draft.editing = false;
+    render();
+    document.getElementById('new-name')?.focus();
+  },
+  'roster-add'() {
+    const d = state.draft;
+    const res = addToRoster(store.loadNames(), d.newName);
+    if (!res.added) return toast(res.error);
+    store.saveNames(res.roster);
+    d.newName = '';
+    d.adding = false;
+    d.selected = toggleSeat(d.selected, res.name); // dört kişiden azsa yeni oyuncu doğrudan seçilir
+    render();
+  },
+  'roster-remove'({ name }) {
+    store.saveNames(removeFromRoster(store.loadNames(), name));
+    state.draft.selected = state.draft.selected.filter(x => nameKeyOf(x) !== nameKeyOf(name));
+    if (state.draft.firstDealer >= state.draft.selected.length) state.draft.firstDealer = 0;
+    render();
+  },
+  'roster-edit-toggle'() { state.draft.editing = !state.draft.editing; state.draft.adding = false; render(); },
   'pick-dealer'({ index }) { state.draft.firstDealer = Number(index); render(); },
   'random-dealer'() {
     state.draft.firstDealer = Math.floor(Math.random() * PLAYER_COUNT);
     render();
-    toast(`${state.draft.names[state.draft.firstDealer].trim() || `${state.draft.firstDealer + 1}. oyuncu`} dağıtıyor`);
+    toast(`${state.draft.selected[state.draft.firstDealer]} dağıtacak`);
   },
   async 'start-game'() {
-    const names = state.draft.names.map(n => n.trim());
-    if (names.some(n => !n)) return toast('Dört oyuncunun da adını yazın');
-    if (new Set(names.map(lower)).size !== PLAYER_COUNT) return toast('İsimler birbirinden farklı olmalı');
-    if (state.game && !(await ask('Devam eden bir oyun var. Onu bitmiş sayıp geçmişe kaldıralım mı?', { okLabel: 'Geçmişe kaldır' }))) return;
-    if (state.game) archive(state.game);
-    state.game = createGame({ players: names, firstDealer: state.draft.firstDealer, rules: store.loadSettings() });
-    store.rememberNames(names);
+    const d = state.draft;
+    if (d.selected.length !== PLAYER_COUNT) return toast('Dört oyuncu seçin');
+    const current = state.game;
+    if (current && current.hands.length > 0 && !(await ask('Devam eden bir oyun var. Onu bitmiş sayıp geçmişe kaldıralım mı?', { okLabel: 'Geçmişe kaldır' }))) return;
+    if (current) { if (current.hands.length > 0) archive(current); else store.clearCurrent(); }
+    state.game = createGame({ players: d.selected, firstDealer: d.firstDealer, rules: store.loadSettings() });
+    store.saveNames(ensureInRoster(store.loadNames(), d.selected));
     persist();
     state.boardMode = 'simple';
     state.viewGame = null;
@@ -240,11 +284,6 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && closeDialog) { closeDialog(false); return; }
   if (e.key === 'Escape' && state.sheet) { actions['sheet-close']?.(); return; }
-  if (e.key === 'Enter' && e.target.dataset?.field === 'name') {
-    const next = document.getElementById(`name-${Number(e.target.dataset.index) + 1}`);
-    if (next) next.focus(); else e.target.blur();
-    return;
-  }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[role="button"][data-action]')) {
     e.preventDefault();
     actions[e.target.dataset.action]?.(e.target.dataset, e.target);
@@ -254,11 +293,8 @@ document.addEventListener('keydown', e => {
 document.addEventListener('input', e => {
   const el = e.target;
   const field = el.dataset?.field;
-  if (field === 'name') {
-    const i = Number(el.dataset.index);
-    state.draft.names[i] = el.value;
-    const btn = document.querySelector(`#dealer-pick button[data-index="${i}"]`);
-    if (btn) btn.textContent = el.value.trim() || `${i + 1}. oyuncu`;
+  if (field === 'new-name') {
+    state.draft.newName = el.value;
   } else if (field === 'points' && state.settings) {
     state.settings.pointsPer[el.dataset.type] = el.value === '' ? NaN : Number(el.value);
   } else if (field === 'kingThreshold' && state.settings) {
@@ -286,7 +322,7 @@ views.board = () => {
   const totals = gameTotals(g);
   const dealer = currentDealer(g);
   const q = quotaState(g);
-  const title = done ? `Bitti, ${g.hands.length} el` : `El ${g.hands.length + 1}/${handsTotal(g.rules)}`;
+  const title = done ? (readOnly ? `Bitti, ${g.hands.length} el` : `${g.hands.length}/${handsTotal(g.rules)} el girildi`) : `El ${g.hands.length + 1}/${handsTotal(g.rules)}`;
   const leader = Math.max(...totals);
 
   const simple = `<div class="panel players">${g.players.map((name, i) => `
@@ -314,13 +350,13 @@ views.board = () => {
     <div class="grid totals"><span class="cell label">Toplam</span>${totals.map(t => `<span class="cell num ${cls(t)}">${formatPoints(t)}</span>`).join('')}</div>
   </div>`;
 
-  const remaining = `<div class="remaining" role="img" aria-label="Kalan eller">${HAND_TYPES.map(t => {
-    const left = q.typeLeft[t.id];
-    return `<span class="item">${mcard(t.id, `sm${left <= 0 ? ' dim' : ''}`)}<span class="count">${left}</span><span>${esc(t.short)}</span></span>`;
-  }).join('')}</div>`;
+  const leftTypes = HAND_TYPES.filter(t => q.typeLeft[t.id] > 0);
+  const remaining = `<div class="remaining" role="img" aria-label="Kalan eller">${leftTypes.length ? leftTypes.map(t =>
+    `<span class="item">${mcard(t.id, 'sm')}<span class="count">${q.typeLeft[t.id]}</span><span>${esc(t.short)}</span></span>`).join('')
+    : '<span class="item" style="min-width:0">Tüm eller oynandı</span>'}</div>`;
 
   const menu = state.menuOpen ? `<div class="menu-backdrop" data-action="menu-close"></div><div class="menu" role="menu">
-    ${!readOnly && !done && g.hands.length ? '<button role="menuitem" data-action="undo-last">Son eli sil</button>' : ''}
+    ${!readOnly && g.hands.length ? '<button role="menuitem" data-action="undo-last">Son eli sil</button>' : ''}
     <button role="menuitem" data-action="speak">Skoru sesli oku</button>
     <button role="menuitem" data-action="share">Paylaş</button>
     ${!readOnly && !done && g.hands.length ? '<button role="menuitem" data-action="finish-early">Oyunu şimdi bitir</button>' : ''}
@@ -354,13 +390,14 @@ function sheetMarkup() {
 
   if (sh.step === 'type') {
     const list = availableTypes(g, dealer, { handIndex, excludeIndex: editing ? sh.editIndex : null });
+    const open = list.filter(a => a.enabled); // seçilemeyen türler listede görünmez (sadeleştirme)
     title = editing ? `${handIndex + 1}. eli düzenle` : `${handIndex + 1}. el`;
-    body = `<div class="type-list">${list.map(a => {
+    body = open.length ? `<div class="type-list">${open.map(a => {
       const t = TYPE_BY_ID[a.type];
-      return `<button class="type-item" data-action="pick-type" data-type="${t.id}"${a.enabled ? '' : ' disabled'}>
-        ${mcard(t.id)}<span><span class="name">${esc(t.name)}</span>${a.enabled ? '' : `<br><span class="why">${esc(a.reason)}</span>`}</span>
-        <span class="left">kalan ${a.left}</span></button>`;
-    }).join('')}</div>`;
+      return `<button class="type-item" data-action="pick-type" data-type="${t.id}">
+        ${mcard(t.id)}<span class="name">${esc(t.name)}</span>
+        <span class="left">kalan ${Math.max(0, a.left)}</span></button>`;
+    }).join('')}</div>` : '<p class="hint" style="text-align:center;margin:20px 0">Bu el için seçilebilecek tür kalmadı. Gerekirse hakları Ayarlar\'dan serbest bırakın.</p>';
     foot = editing ? `<button class="btn btn-danger btn-block" data-action="delete-hand" data-index="${sh.editIndex}">Bu eli sil</button>` : '';
   } else {
     back = true;
@@ -420,6 +457,7 @@ views.finish = () => {
   <div class="stack">
     <button class="btn btn-primary btn-block" data-action="share">Sonucu paylaş</button>
     <button class="btn btn-block" data-action="rematch">Aynı oyuncularla yeni oyun</button>
+    <button class="btn btn-ghost btn-block" data-action="reopen-last">Son eli düzelt</button>
     <button class="btn btn-ghost btn-block" data-action="go" data-view="home">Ana ekran</button>
   </div>
 </div>`;
@@ -471,7 +509,7 @@ Object.assign(actions, {
     state.game = next;
     state.sheet = null;
     persist();
-    if (!editing && isFinished(next)) return finishGame(next);
+    if (isFinished(next)) return finishGame(next);
     render();
     toast(editing ? 'El güncellendi' : `${handIndex + 1}. el kaydedildi`);
   },
@@ -537,8 +575,22 @@ Object.assign(actions, {
   },
   rematch() {
     const g = state.finishedGame;
-    state.draft = { names: [...g.players], firstDealer: (g.firstDealer + 1) % PLAYER_COUNT };
+    state.draft = { selected: [...g.players], firstDealer: (g.firstDealer + 1) % PLAYER_COUNT, adding: false, newName: '', editing: false };
     setView('new');
+  },
+  'reopen-last'() {
+    const g = state.finishedGame;
+    if (!g || !g.hands.length) return;
+    store.removeFromHistory(g.id);
+    state.game = { ...g, finishedAt: null };
+    state.finishedGame = null;
+    persist();
+    state.viewGame = null;
+    state.boardMode = 'detail';
+    const idx = state.game.hands.length - 1;
+    const h = state.game.hands[idx];
+    state.sheet = { step: 'counts', type: h.type, counts: [...h.counts], trumpSuit: h.trumpSuit || null, editIndex: idx };
+    setView('board');
   },
 });
 
@@ -659,16 +711,26 @@ document.addEventListener('change', async e => {
   toast('Yedek geri yüklendi');
 });
 
+document.addEventListener('submit', e => {
+  if (e.target.dataset?.form !== 'roster-add') return;
+  e.preventDefault();
+  actions['roster-add']();
+});
+
 // ---------- başlat ----------
 if ('serviceWorker' in navigator && !window.__KING_BUNDLE__) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').then(reg => {
+      const announce = () => toast('Yeni sürüm hazır', { label: 'Yenile', action: 'reload', sticky: true });
+      if (reg.waiting && navigator.serviceWorker.controller) announce();
       reg.addEventListener('updatefound', () => {
         const worker = reg.installing;
         worker?.addEventListener('statechange', () => {
-          if (worker.state === 'installed' && navigator.serviceWorker.controller) toast('Yeni sürüm hazır', { label: 'Yenile', action: 'reload', sticky: true });
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) announce();
         });
       });
+      // iOS ana ekran uygulamaları yeniden başlatılmaz, öne alınır: görünür olunca güncelleme kontrolü.
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
     }).catch(() => {});
   });
 }

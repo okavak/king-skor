@@ -101,7 +101,7 @@ input { font: inherit; color: inherit; }
 .mcard.dim { opacity: .3; }
 
 /* kalanlar şeridi */
-.remaining { display: flex; gap: 6px; justify-content: space-between; padding: 14px 2px 0; }
+.remaining { display: flex; gap: 12px; justify-content: flex-start; flex-wrap: wrap; padding: 14px 4px 0; }
 .remaining .item { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--muted); min-width: 40px; }
 .remaining .count { font-weight: 700; color: var(--ink-2); font-size: 13px; }
 
@@ -167,6 +167,21 @@ input { font: inherit; color: inherit; }
 .suits button { width: 48px; height: 44px; border-radius: 10px; background: var(--surface-2); font-size: 22px; border: 2px solid transparent; }
 .suits button.red { color: var(--red); }
 .suits button[aria-pressed="true"] { border-color: var(--gold); }
+
+/* oyuncu listesi (yeni oyun) */
+.roster-row { display: grid; grid-template-columns: 1fr auto; align-items: center; }
+.roster-row + .roster-row, .roster-row + .roster-add { border-top: 1px solid var(--line); }
+.roster-pick { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; width: 100%; min-height: 58px; padding: 0 16px; text-align: left; }
+.roster-pick[disabled] { opacity: .45; cursor: default; }
+.roster-pick.add .roster-name { color: var(--gold); font-weight: 600; }
+.roster-name { font-size: 17px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; font-family: ui-rounded, -apple-system, BlinkMacSystemFont, sans-serif; color: var(--gold-ink); flex: none; }
+.seat.on { background: var(--gold); border-color: var(--gold); }
+.seat.plus { border-style: dashed; border-color: var(--gold); color: var(--gold); font-size: 20px; font-weight: 500; }
+.roster-remove { color: var(--red); margin-right: 6px; }
+.roster-add { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 10px 16px 12px; margin: 0; }
+.roster-add .btn { min-height: 48px; font-size: 16px; }
+.edit-toggle { font-size: 14px; font-weight: 600; width: auto; padding: 0 6px; border-radius: 8px; color: var(--gold); }
 
 /* formlar */
 .field { display: grid; gap: 6px; margin-bottom: 12px; }

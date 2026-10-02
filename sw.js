@@ -1,5 +1,5 @@
 // sw.js — uygulama kabuğunu önbelleğe alır; önbellek-önce, arka planda yenile.
-const VERSION = '2026.10.02';
+const VERSION = '2026.10.02-2';
 const CACHE = `king-skor-${VERSION}`;
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './rules.js', './store.js', './version.js',
@@ -8,7 +8,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' → HTTP önbelleğini atla; yeni sürüm her zaman taze dosyalarla kurulur.
+  event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
@@ -22,15 +23,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const { request } = event;
   if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
-  event.respondWith(
-    caches.match(request, { ignoreSearch: true }).then(cached => {
-      const network = fetch(request)
-        .then(res => {
-          if (res.ok) caches.open(CACHE).then(c => c.put(request, res.clone()));
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    }),
-  );
+  // Önbellek-önce: kabuk dosyaları sürümlü önbellekten gelir; eksikse ağa gidilir.
+  // Çalışma zamanında önbelleğe yazılmaz; böylece tek önbellekte karışık sürüm oluşmaz.
+  event.respondWith(caches.match(request, { ignoreSearch: true }).then(cached => cached || fetch(request)));
 });

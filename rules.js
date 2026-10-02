@@ -97,7 +97,9 @@ export function withHandReplaced(game, index, hand) {
 }
 
 export function withoutHand(game, index) {
-  return { ...game, hands: game.hands.filter((_, i) => i !== index) };
+  // Dağıtan sırası indeksten türetilir; silmeden sonra kalan eller yeniden damgalanır.
+  const hands = game.hands.filter((_, i) => i !== index).map((h, i) => ({ ...h, dealer: dealerForHand(game, i) }));
+  return { ...game, hands };
 }
 
 export function gameTotals(game) {
@@ -129,13 +131,13 @@ export function availableTypes(game, dealer, { handIndex = game.hands.length, ex
   return HAND_TYPES.map(t => {
     const left = q.typeLeft[t.id];
     const ok = { type: t.id, enabled: true, reason: '', left };
+    if (!t.ceza && r.noKozFirstRound && handIndex < PLAYER_COUNT) return { ...ok, enabled: false, reason: `İlk ${PLAYER_COUNT} elde koz seçilemez` };
     if (!r.enforceQuotas) return ok;
     if (t.ceza) {
       if (left <= 0) return { ...ok, enabled: false, reason: `${t.name} ${r.maxPerCezaType} kez oynandı` };
       if (q.cezaLeft[dealer] <= 0) return { ...ok, enabled: false, reason: `${name} için ceza hakkı kalmadı` };
-    } else {
-      if (q.kozLeft[dealer] <= 0) return { ...ok, enabled: false, reason: `${name} için koz hakkı kalmadı` };
-      if (r.noKozFirstRound && handIndex < PLAYER_COUNT) return { ...ok, enabled: false, reason: `İlk ${PLAYER_COUNT} elde koz seçilemez` };
+    } else if (q.kozLeft[dealer] <= 0) {
+      return { ...ok, enabled: false, reason: `${name} için koz hakkı kalmadı` };
     }
     return ok;
   });
@@ -173,11 +175,6 @@ function nameKey(name) {
   return String(name).trim().toLocaleLowerCase('tr-TR');
 }
 
-function titleCase(name) {
-  const s = String(name).trim();
-  return s.charAt(0).toLocaleUpperCase('tr-TR') + s.slice(1).toLocaleLowerCase('tr-TR');
-}
-
 export function playerStats(games) {
   const map = new Map();
   for (const g of games) {
@@ -187,7 +184,7 @@ export function playerStats(games) {
     const threshold = g.rules.kingThreshold ?? DEFAULT_RULES.kingThreshold;
     g.players.forEach((name, seat) => {
       const key = nameKey(name);
-      const p = map.get(key) || { name: titleCase(name), games: 0, wins: 0, sum: 0, best: -Infinity, worst: Infinity, kings: 0 };
+      const p = map.get(key) || { name: String(name).trim(), games: 0, wins: 0, sum: 0, best: -Infinity, worst: Infinity, kings: 0 };
       p.games += 1;
       if (winners.has(seat)) p.wins += 1;
       p.sum += totals[seat];

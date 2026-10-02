@@ -47,13 +47,12 @@ test('settings merge over defaults, including nested pointsPer', () => {
   assert.equal(loaded.kingThreshold, 10);
 });
 
-test('rememberNames keeps recent-first unique (tr-TR case-insensitive) list of 24', () => {
+test('saveNames stores a clean unique roster (tr-TR) capped at 50', () => {
   const s = createStore(fakeStorage());
-  s.rememberNames(['Ali', 'Ayşe']);
-  s.rememberNames(['ayşe', 'Can']);
-  assert.deepEqual(s.loadNames(), ['ayşe', 'Can', 'Ali']);
-  s.rememberNames(Array.from({ length: 30 }, (_, i) => `O${i}`));
-  assert.equal(s.loadNames().length, 24);
+  s.saveNames(['Ali', ' Ayşe ', 'ali', 7, '', 'Can']);
+  assert.deepEqual(s.loadNames(), ['Ali', 'Ayşe', 'Can']);
+  s.saveNames(Array.from({ length: 60 }, (_, i) => `O${i}`));
+  assert.equal(s.loadNames().length, 50);
 });
 
 test('tolerates corrupt JSON and wrong shapes', () => {
@@ -85,7 +84,7 @@ test('flags', () => {
 test('wipeAll removes every key', () => {
   const st = fakeStorage();
   const s = createStore(st);
-  s.saveCurrent(createGame({ players })); s.rememberNames(players); s.setFlag('x', true); s.saveSettings({ a: 1 }); s.addToHistory(createGame({ players }));
+  s.saveCurrent(createGame({ players })); s.saveNames(players); s.setFlag('x', true); s.saveSettings({ a: 1 }); s.addToHistory(createGame({ players }));
   s.wipeAll();
   assert.deepEqual(st.dump(), {});
 });
@@ -94,7 +93,7 @@ test('exportAll / importAll round-trip; importAll rejects invalid payload', () =
   const st = fakeStorage();
   const s = createStore(st);
   const g = createGame({ players });
-  s.saveCurrent(g); s.addToHistory(createGame({ players })); s.rememberNames(players);
+  s.saveCurrent(g); s.addToHistory(createGame({ players })); s.saveNames(players);
   s.saveSettings({ ...s.loadSettings(), enforceQuotas: false });
   const json = s.exportAll();
   const parsed = JSON.parse(json);

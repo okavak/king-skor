@@ -10,7 +10,7 @@ const KEYS = {
   flags: PREFIX + 'flags',
 };
 const HISTORY_CAP = 200;
-const NAMES_CAP = 24;
+const NAMES_CAP = 50;
 const EXPORT_VERSION = 1;
 
 const normName = n => String(n).trim().toLocaleLowerCase('tr-TR');
@@ -75,13 +75,13 @@ export function createStore(storage) {
     loadSettings,
     saveSettings: settings => write(KEYS.settings, settings),
     loadNames,
-    rememberNames(names) {
-      const incoming = names.map(n => String(n).trim()).filter(Boolean);
-      const unique = [];
-      for (const n of incoming) if (!unique.some(u => normName(u) === normName(n))) unique.push(n);
-      const seen = new Set(unique.map(normName));
-      const rest = loadNames().filter(n => !seen.has(normName(n)));
-      return write(KEYS.names, [...unique, ...rest].slice(0, NAMES_CAP));
+    saveNames(names) {
+      const clean = [];
+      for (const n of names) {
+        if (typeof n !== 'string' || !n.trim()) continue;
+        if (!clean.some(c => normName(c) === normName(n))) clean.push(n.trim());
+      }
+      return write(KEYS.names, clean.slice(0, NAMES_CAP));
     },
     wipeAll() { for (const k of Object.values(KEYS)) write(k, null); },
     loadFlag: name => Boolean(loadFlags()[name]),

@@ -133,18 +133,21 @@ localStorage anahtarları: `king:v1:current`, `king:v1:history`, `king:v1:settin
 1. **Ana ekran**: devam eden oyun kartı (oyuncular, el X/20, "Devam et"), "Yeni oyun",
    geçmiş oyunlar listesi (tarih, kazanan, tıkla → salt okunur tablo), ayarlar; standalone
    değilse kapatılabilir "Ana Ekrana Ekle" ipucu.
-2. **Yeni oyun**: 4 isim (son oyundan ön dolu, son kullanılan isimler çip olarak), ilk dağıtan
-   seçimi veya rastgele, başlat.
+2. **Yeni oyun**: kalıcı oyuncu listesi (roster). Listeden dokunarak 4 kişi seçilir; dokunma sırası
+   koltuk sırasıdır ve 1–4 rozetiyle gösterilir (kullanıcının alıştığı uygulamayla aynı kalıp). "Yeni
+   oyuncu ekle" ile listeye isim eklenir (benzersiz, tr-TR büyük/küçük harf duyarsız), "Düzenle" ile
+   listeden çıkarılır. Dört kişi seçilince ilk dağıtan seçimi (varsayılan 1. koltuk) ve "Rastgele" görünür.
 3. **Oyun tablosu** (rakip uygulamalarla ortak dil): başlık (el sayacı "7/20", dağıtan rozeti),
    "Basit | Detaylı" geçişi. **Basit**: oyuncu başına satır → 2 daire (koz hakkı) + 3 üçgen (ceza
    hakkı; kullanılanlar dolu), ad, büyük toplam (işarete göre renkli), sıradaki dağıtan vurgulu.
    **Detaylı**: sütun = oyuncu, satır = el ("3. El · Rıfkı" + puanlar, sıfır "–"), dağıtanın
-   hücresi vurgulu, altta yapışkan toplam satırı. Her iki görünümde altta "Kalanlar: El (1) ·
-   Kupa (2) · … · Koz (6)" şeridi. Başparmak erişiminde "El Ekle"; menüde "Son eli sil", "Skoru oku"
+   hücresi vurgulu, altta yapışkan toplam satırı. Her iki görünümde altta kalanlar şeridi (yalnızca
+   sayısı 0'dan büyük türler). Başparmak erişiminde "El Ekle"; menüde "Son eli sil", "Skoru oku"
    (Web Speech, tr-TR), "Paylaş"; satıra dokun → düzenle/sil.
 4. **El Ekle (alt panel)**: başlık "{Dağıtan} konuşuyor · kalan hakkı: 2 ceza, 1 koz".
-   Adım 1 tür seçimi: 7 satır (kart simgesi + ad + "kalan 1"); seçilemeyenler pasif ve nedeni yazılı
-   ("Kupa Almaz 2 kez oynandı", "Ali'nin koz hakkı bitti", "İlk 4 elde koz seçilemez").
+   Adım 1 tür seçimi: yalnızca seçilebilir türler listelenir (kart simgesi + ad + "kalan 1"); iki kez
+   oynanmış ceza, dağıtanın hakkı bitmiş tür ya da ilk 4 elde koz listede hiç görünmez (kullanıcı isteği:
+   sadeleştirme). Hiç tür kalmadıysa açıklayıcı bir satır gösterilir.
    Adım 2 sayım girişi: oyuncu başına −/+ stepper, canlı "Kalan N", "kalanı ver" kısayolu,
    Rıfkı için tek dokunuş, Koz için isteğe bağlı renk; puan ön izlemesi; toplam tutmadan kaydet pasif.
 5. **Oyun bitti**: sıralama, kazanan vurgusu, toplam=0 kontrolü, "Paylaş" (Web Share metin),
@@ -200,3 +203,15 @@ ayarlanabilir puanlar; "ilk 4 el koz seçilmesin" ev kuralı; "King" istatistiğ
 
 Bilinçli olarak alınmayanlar: hesap/giriş, arkadaş davet ve ortak tablolar (sunucu gerektirir),
 radar grafikler, abonelik/paywall, reklam.
+
+## 8. Uygulama sonrası değişiklikler (2026-10-02, kullanıcı geri bildirimi + kod incelemesi)
+
+- Yeni oyun ekranı oyuncu listesinden seçime çevrildi (bölüm 4.4/2).
+- Tükenen türler seçim listesinden ve kalanlar şeridinden gizlenir.
+- Ortadaki bir el silinince sonraki ellerin dağıtanı yeniden damgalanır (`withoutHand`).
+- Bitiş ekranında "Son eli düzelt": oyun geçmişten alınıp son el düzenlenir, tekrar bitirilir.
+- Service worker kurulumda HTTP önbelleğini atlar (`cache: 'reload'`), çalışma zamanında önbelleğe yazmaz;
+  uygulama görünür olunca güncelleme kontrolü yapar.
+- `deploy.sh` yalnızca temiz `main` dalında çalışır; testler sürüm damgasından önce koşar.
+- Yerel `confirm()` yerine uygulama içi onay diyaloğu.
+- 0 elli devam eden oyun, yeni oyun başlatılınca geçmişe değil çöpe gider; beraberlik "X ve Y berabere".
