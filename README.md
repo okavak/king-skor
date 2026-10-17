@@ -51,7 +51,7 @@ npm test                      # puanlama ve kalıcılık testleri
 python3 -m http.server 8080   # yerel çalıştır → http://localhost:8080
 python3 tools/make-icons.py   # ikonları yeniden üret
 node tools/bundle.mjs         # tek dosyalık önizleme → dist/king-skor.html
-./deploy.sh                   # GitHub Pages'e yayınla (gh auth login gerekir)
+./deploy.sh                   # GitHub Pages'e yayınla (git kimliğiyle; gh yalnızca ilk kurulumda)
 ```
 
 Derleme adımı ve bağımlılık yok. Tasarım: `docs/superpowers/specs/`, plan: `docs/superpowers/plans/`.
