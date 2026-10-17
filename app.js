@@ -410,9 +410,9 @@ views.board = () => {
   </div>`;
 
   const leftTypes = HAND_TYPES.filter(t => q.typeLeft[t.id] > 0);
-  const remaining = `<div class="remaining" role="img" aria-label="Kalan eller">${leftTypes.length ? leftTypes.map(t =>
-    `<span class="item">${mcard(t.id, 'sm')}<span class="count">${q.typeLeft[t.id]}</span><span>${esc(t.short)}</span></span>`).join('')
-    : '<span class="item" style="min-width:0">Tüm eller oynandı</span>'}</div>`;
+  const remaining = `<div class="remaining" role="img" aria-label="Kalan eller" style="--types:${HAND_TYPES.length}">${leftTypes.length ? leftTypes.map(t =>
+    `<span class="item">${mcard(t.id, 'lg')}<span class="count num">${q.typeLeft[t.id]}</span><span class="name">${esc(t.short)}</span></span>`).join('')
+    : '<span class="done">Tüm eller oynandı</span>'}</div>`;
 
   const menu = state.menuOpen ? `<div class="menu-backdrop" data-action="menu-close"></div><div class="menu" role="menu">
     ${!readOnly && g.hands.length ? '<button role="menuitem" data-action="undo-last">Son eli sil</button>' : ''}
@@ -773,15 +773,20 @@ function renderScoreCanvas(g) {
   const x = c.getContext('2d');
   x.scale(scale, scale);
   const font = (w, px) => `${w} ${px}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-  const NAVY = '#1B2236', INK = '#F2EFE6', MUTED = '#8E97B3', GOLD = '#E9B949', RED = '#F0565E', LINE = 'rgba(255,255,255,.1)';
+  const NAVY = '#1B2236', INK = '#F2EFE6', MUTED = '#A0A8C2', GOLD = '#E9B949', RED = '#FF7A7F', GREEN = '#55D08A', LINE = 'rgba(255,255,255,.1)';
   x.fillStyle = NAVY; x.fillRect(0, 0, W, H);
   x.fillStyle = INK; x.font = font(800, 30); x.fillText('King Skor', 32, 54);
   x.fillStyle = MUTED; x.font = font(400, 16); x.fillText(`${fmtDate(g.finishedAt || g.createdAt)}, ${rows} el`, 32, 80);
   const o = outcomes(g);
   const names = kind => g.players.filter((_, i) => o.bySeat[i] === kind);
-  const verdict = o.king !== null ? `${g.players[o.king]} King yaptı. ${joinTr(names('sunk'))} battı.`
-    : (g.finishedAt ? `${names('out').length ? `${joinTr(names('out'))} çıktı.` : 'Kimse çıkamadı.'} ${names('sunk').length ? `${joinTr(names('sunk'))} battı.` : ''}` : 'Oyun sürüyor');
-  x.fillStyle = GOLD; x.font = font(600, 18); x.fillText(verdict, 32, 112);
+  const outs = names('out'), sunk = names('sunk');
+  // Sonuç cümlesi parça parça boyanır: çıkan yeşil, batan kırmızı, King altın.
+  const verdict = o.king !== null ? [[`${g.players[o.king]} King yaptı.`, GOLD], [`${joinTr(sunk)} battı.`, RED]]
+    : g.finishedAt ? [[outs.length ? `${joinTr(outs)} çıktı.` : 'Kimse çıkamadı.', outs.length ? GREEN : INK], [sunk.length ? `${joinTr(sunk)} battı.` : '', RED]]
+      : [['Oyun sürüyor', INK]];
+  x.font = font(600, 18);
+  let vx = 32;
+  verdict.filter(([text]) => text).forEach(([text, color]) => { x.fillStyle = color; x.fillText(text, vx, 112); vx += x.measureText(`${text} `).width; });
   const colW = 128, firstCol = W - 32 - colW * 4;
   const colRight = i => firstCol + colW * (i + 1);
   x.fillStyle = MUTED; x.font = font(600, 15); x.textAlign = 'right';
@@ -791,12 +796,12 @@ function renderScoreCanvas(g) {
   g.hands.forEach((h, idx) => {
     const y = top + idx * rowH;
     if (idx % 2 === 0) { x.fillStyle = 'rgba(255,255,255,.035)'; x.fillRect(24, y, W - 48, rowH); }
-    x.fillStyle = 'rgba(233,185,73,.16)'; x.fillRect(colRight(h.dealer) - colW + 8, y, colW - 8, rowH);
+    x.fillStyle = 'rgba(233,185,73,.10)'; x.fillRect(colRight(h.dealer) - colW + 8, y, colW - 8, rowH);
     x.fillStyle = INK; x.font = font(500, 15);
     x.fillText(`${idx + 1}. ${TYPE_BY_ID[h.type].short}${h.trumpSuit ? ` ${SUITS[h.trumpSuit]}` : ''}`, 32, y + 29);
     x.textAlign = 'right'; x.font = font(700, 17);
     handScores(h, g.rules).forEach((sc, i) => {
-      x.fillStyle = sc < 0 ? RED : sc > 0 ? GOLD : MUTED;
+      x.fillStyle = sc < 0 ? RED : sc > 0 ? GREEN : MUTED;
       x.fillText(sc === 0 ? '–' : String(sc), colRight(i) - 10, y + 30);
     });
     x.textAlign = 'left';
@@ -805,7 +810,7 @@ function renderScoreCanvas(g) {
   x.fillStyle = LINE; x.fillRect(24, ty, W - 48, 2);
   x.fillStyle = INK; x.font = font(700, 17); x.fillText('Toplam', 32, ty + 31);
   x.textAlign = 'right'; x.font = font(800, 20);
-  totals.forEach((t, i) => { x.fillStyle = t < 0 ? RED : t > 0 ? GOLD : MUTED; x.fillText(String(t), colRight(i) - 10, ty + 32); });
+  totals.forEach((t, i) => { x.fillStyle = t < 0 ? RED : t > 0 ? GREEN : MUTED; x.fillText(String(t), colRight(i) - 10, ty + 32); });
   x.textAlign = 'left';
   x.fillStyle = MUTED; x.font = font(400, 13); x.fillText('okavak.github.io/king-skor', 32, H - 28);
   return c;

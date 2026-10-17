@@ -222,3 +222,17 @@ radar grafikler, abonelik/paywall, reklam.
   seçim şeridi; düzenlerken aynı toplamlı türler arasında sayılar korunur; panel dışına dokununca girilen sayılar
   silinmez; oyun ortasında dağıtan sırası düzeltme (`withFirstDealer`); değişen toplamlarda nabız animasyonu;
   skor tablosunu PNG olarak paylaşma (canvas, önizleme + Web Share); Screen Wake Lock (ayarla kapatılabilir).
+
+## 9. Okunurluk ve renk düzeltmeleri (2026-10-17, kullanıcı geri bildirimi)
+
+- Oyun tablosundaki kalanlar şeridi büyütüldü: kart 22×30 → 36×48 px, tür adı 10 → 14 px (koyu, kalın),
+  kalan sayısı 13 → 20 px. Şerit tür sayısı kadar eşit sütuna bölünür; 360 px genişlikte de tek satıra sığar.
+- Renk dili: çıkan/artı puan **yeşil**, batan/eksi puan **kırmızı**, sıfır nötr gri. "Çıktı" etiketi ve
+  "Tamam" durumu yeşil. Altın yalnızca vurgu rengidir (düğmeler, dağıtan çizgisi, koz, King tacı ve etiketi).
+- Tüm metinler her iki temada arka planına karşı en az 4.5:1 kontrastta (büyük yazı ve simgeler 3:1).
+  Açık temada altın renkli yazılar için ayrı koyu ton (`--gold-text`); koyu temada bildirim düğmesi
+  krem zemin üstünde koyu altın (`--toast-action`).
+- Açık temadaki hardal/kahverengi ana düğme rengi kaldırıldı: dolgular (ana düğme, koz kartı, King etiketi)
+  iki temada da açık altın #E9B949, üstünde lacivert yazı 8.7:1. İnce çizgi ve simgeler (koz hakkı daireleri,
+  dağıtan çizgisi, taç kenarı, odak çerçevesi) açık temada daha koyu altın (`--gold-line`).
+- Paylaşım görselinde artı puanlar yeşil; sonuç cümlesinde çıkanlar yeşil, batanlar kırmızı, King altın.
