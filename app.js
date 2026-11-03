@@ -816,6 +816,9 @@ function groupSection() {
     <div class="group-head"><span class="group-name">${esc(g.name)}</span><span class="group-code num" aria-label="Grup kodu">${esc(formatCode(g.code))}</span></div>
     <p class="group-status${n ? ' wait' : ''}">${n ? `${n} oyun gönderilmeyi bekliyor; internet olunca kendiliğinden gider.` : 'Bütün oyunlar ortak kayıtta.'}</p>
     <div class="group-actions"><button class="btn btn-primary" data-action="group-invite">Davet et</button><button class="btn btn-ghost" data-action="group-leave">Gruptan çık</button></div>
+    ${group.isAdmin()
+    ? '<div class="group-admin"><span>Bu telefon grubun yöneticisi.</span><button class="btn btn-ghost" data-action="admin-logout">Yönetici çıkışı</button></div>'
+    : '<div class="group-admin"><span></span><button class="btn btn-ghost" data-action="admin-login">Yönetici girişi</button></div>'}
   </div></div>`;
 }
 
@@ -879,21 +882,28 @@ function joinCard() {
   </div>`;
 }
 
+const isAdmin = () => Boolean(group.current()) && group.isAdmin();
+
+function leaderRow(p, admin) {
+  const ranked = p.rank !== null;
+  const waiting = p.games === 0;
+  const flag = admin && !p.member ? ' <span class="tag warn">Listede yok</span>' : '';
+  const sub = waiting ? 'Henüz oyun yok' : ranked ? `${p.games} oyunda ${p.wins} kez çıktı` : `${p.games} oyun, sıralamaya ${MIN_RANKED_GAMES} oyunla girer`;
+  const cls = `leader-row${p.rank === 1 ? ' first' : ''}${ranked ? '' : ' unranked'}${waiting ? ' waiting' : ''}`;
+  const inner = `<span class="rank num">${ranked ? p.rank : '–'}</span>
+      <span class="who"><span class="n">${esc(p.name)}${flag}</span><span class="s">${sub}</span></span>
+      <span class="rate num">${waiting ? '' : pct(p.winRate)}</span>`;
+  // Oyunu olmayanın karnesi boştur: yalnızca yönetici açar (listeden çıkarmak için).
+  return waiting && !admin ? `<div class="${cls}">${inner}</div>` : `<button class="${cls}" data-action="open-player" data-key="${esc(p.key)}">${inner}</button>`;
+}
+
 views.stats = () => {
   const { analysis, note } = analysisSource();
-  const rows = analysis.players.map(p => {
-    const ranked = p.rank !== null;
-    const sub = ranked ? `${p.games} oyunda ${p.wins} kez çıktı` : `${p.games} oyun, sıralamaya ${MIN_RANKED_GAMES} oyunla girer`;
-    return `<button class="leader-row${p.rank === 1 ? ' first' : ''}${ranked ? '' : ' unranked'}" data-action="open-player" data-key="${esc(p.key)}">
-      <span class="rank num">${ranked ? p.rank : '–'}</span>
-      <span class="who"><span class="n">${esc(p.name)}</span><span class="s">${sub}</span></span>
-      <span class="rate num">${pct(p.winRate)}</span>
-    </button>`;
-  }).join('');
+  const admin = isAdmin();
   return `<div class="screen">
   <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>Analiz</h1><span></span></header>
   <p class="source">${esc(note)}</p>
-  ${analysis.players.length ? `<div class="panel">${rows}</div>
+  ${analysis.players.length ? `<div class="panel">${analysis.players.map(p => leaderRow(p, admin)).join('')}</div>
   <p class="hint" style="margin-top:12px">Kazanma yüzdesi: oyunu çıkarak ya da King yaparak bitirdiği oyunların oranı. Ceza karnesi için oyuncuya dokunun.</p>`
     : '<div class="panel empty">Henüz biten oyun yok. İlk oyun bitince sıralama burada görünür.</div>'}
   ${joinCard()}
@@ -907,17 +917,51 @@ function shareTone(typeId, share) {
   return (TYPE_BY_ID[typeId].ceza ? d > 0 : d < 0) ? 'bad' : 'good';
 }
 
+function shareBar(typeId, share) {
+  const width = Math.min(100, (share / (FAIR_SHARE * 2)) * 100); // çubuğun ortası = adil pay
+  return `<span class="bar" aria-hidden="true"><span class="fill ${shareTone(typeId, share)}" style="width:${width.toFixed(1)}%"></span><span class="fair"></span></span>`;
+}
+
 function shareRow(t, s) {
   if (!s.hands) {
     return `<div class="share-row none">${mcard(t.id)}<span><span class="n">${esc(t.name)}</span><span class="s">oynanmadı</span></span><span></span><span class="pct num">–</span></div>`;
   }
-  const tone = shareTone(t.id, s.share);
-  const width = Math.min(100, (s.share / (FAIR_SHARE * 2)) * 100); // çubuğun ortası = adil pay
   return `<div class="share-row" role="img" aria-label="${esc(t.name)}: ${s.hands} elde payı ${pct(s.share)}, adil pay %25">
     ${mcard(t.id)}
     <span><span class="n">${esc(t.name)}</span><span class="s">${s.hands} el</span></span>
-    <span class="bar" aria-hidden="true"><span class="fill ${tone}" style="width:${width.toFixed(1)}%"></span><span class="fair"></span></span>
-    <span class="pct num ${tone}">${pct(s.share)}</span>
+    ${shareBar(t.id, s.share)}
+    <span class="pct num ${shareTone(t.id, s.share)}">${pct(s.share)}</span>
+  </div>`;
+}
+
+// Gidişat: son 5 oyunun kazanma yüzdesi, genel yüzdeye göre (6. oyundan sonra).
+function trendSection(p) {
+  if (!p.recent) return '';
+  const d = p.recent.winRate - p.winRate;
+  const tone = d > 0.05 ? 'good' : d < -0.05 ? 'bad' : 'even';
+  const word = { good: 'Yükselişte', bad: 'Düşüşte', even: 'Aynı çizgide' }[tone];
+  return `<div class="section"><h2>Gidişat</h2><p class="insight ${tone}" style="margin-top:0"><strong>${word}.</strong> Son 5 oyunda ${p.recent.wins} kez çıktı (${pct(p.recent.winRate)}), genelde ${pct(p.winRate)}.</p></div>`;
+}
+
+// Dağıtan oynanacak eli seçer: kendi seçtiği ellerdeki payı, başkalarının seçtiklerine göre.
+function choiceSection(p) {
+  const c = p.choice;
+  if (!c.ceza.own.hands && !c.koz.own.hands) return '';
+  const row = (label, typeId, s) => (s.hands
+    ? `<div class="choice-row" role="img" aria-label="${label}: ${s.hands} elde payı ${pct(s.share)}, adil pay %25">
+        <span><span class="n">${label}</span><span class="s">${s.hands} el</span></span>${shareBar(typeId, s.share)}<span class="pct num ${shareTone(typeId, s.share)}">${pct(s.share)}</span></div>`
+    : `<div class="choice-row none"><span><span class="n">${label}</span><span class="s">el yok</span></span><span></span><span class="pct num">–</span></div>`);
+  const notes = [];
+  const cmp = (own, other) => (own.hands && other.hands ? own.share - other.share : 0);
+  const dc = cmp(c.ceza.own, c.ceza.other);
+  if (dc > 0.03) notes.push('Kendi seçtiği cezalarda başkalarının seçtiklerinden daha çok alıyor.');
+  else if (dc < -0.03) notes.push('Kendi seçtiği cezaları başkalarınınkinden iyi oynuyor.');
+  const dk = cmp(c.koz.own, c.koz.other);
+  if (dk > 0.03) notes.push('Kendi seçtiği kozda daha çok el alıyor.');
+  else if (dk < -0.03) notes.push('Kendi seçtiği kozda başkalarınınkinden az el alıyor.');
+  return `<div class="section"><h2>Kendi seçtiği eller</h2>
+    <div class="panel">${row('Kendi seçtiği cezalar', 'el', c.ceza.own)}${row('Başkalarının seçtiği cezalar', 'el', c.ceza.other)}${row('Kendi seçtiği kozlar', 'koz', c.koz.own)}${row('Başkalarının seçtiği kozlar', 'koz', c.koz.other)}</div>
+    <p class="hint" style="margin-top:10px">${notes.length ? `${notes.join(' ')} ` : ''}Dağıtan, oynanacak eli kendisi seçer.</p>
   </div>`;
 }
 
@@ -928,17 +972,35 @@ function currentPlayer() {
   return { ...src, p };
 }
 
+// İsim birleştirme, ayırma ve resmi listeden çıkarma yalnızca yöneticide görünür (sunucu da anahtarı denetler).
+function adminSection(p, aliases, analysis) {
+  if (!isAdmin()) return '';
+  const linked = Object.keys(aliases).filter(from => resolveAlias(from, aliases) === p.key)
+    .map(from => ({ from, label: p.spellings.filter(n => nameKey(n) === from).join(', ') || from }));
+  const canMerge = p.games > 0 && analysis.players.length > 1;
+  return `<div class="section"><h2>Yönetici</h2>
+    ${!p.member && p.games ? '<p class="insight bad" style="margin-top:0">Bu isim resmi listede yok. Doğru kişiye bağlamak için "Başka bir isimle birleştir".</p>' : ''}
+    ${linked.length ? `<div class="panel" style="padding:0 14px;margin-top:10px">${linked.map(l => `<div class="toggle-row"><span><span class="t">${esc(l.label)}</span><br><span class="d">bu oyuncuyla birleştirildi</span></span><button class="btn btn-ghost" data-action="player-split" data-from="${esc(l.from)}">Ayır</button></div>`).join('')}</div>` : ''}
+    <div class="stack">
+      ${canMerge ? '<button class="btn btn-block" data-action="player-merge">Başka bir isimle birleştir</button>' : ''}
+      ${p.member ? '<button class="btn btn-ghost btn-block" data-action="member-remove">Resmi listeden çıkar</button>' : ''}
+    </div>
+  </div>`;
+}
+
 views.player = () => {
-  const { p, aliases, grouped, analysis } = currentPlayer();
+  const { p, aliases, analysis } = currentPlayer();
   if (!p) { state.view = 'stats'; return views.stats(); }
   state.playerKey = p.key;
+  const head = `<header class="topbar"><button class="icon-btn" data-action="go" data-view="stats" aria-label="Sıralamaya dön">‹</button><h1>${esc(p.name)}</h1><span></span></header>`;
+  if (p.games === 0) {
+    return `<div class="screen">${head}<div class="panel empty">Henüz oyunu yok. İlk oyundan sonra karnesi burada görünür.</div>${adminSection(p, aliases, analysis)}</div>`;
+  }
   const weak = p.weakest && TYPE_BY_ID[p.weakest];
   const strong = p.strongest && TYPE_BY_ID[p.strongest];
   const rankLine = p.rank !== null ? `Sıralamada ${p.rank}.` : `Sıralamaya girmek için ${MIN_RANKED_GAMES - p.games} oyun daha gerekiyor.`;
-  const linked = Object.keys(aliases).filter(from => resolveAlias(from, aliases) === p.key)
-    .map(from => ({ from, label: p.spellings.filter(n => nameKey(n) === from).join(', ') || from }));
   return `<div class="screen">
-  <header class="topbar"><button class="icon-btn" data-action="go" data-view="stats" aria-label="Sıralamaya dön">‹</button><h1>${esc(p.name)}</h1><span></span></header>
+  ${head}
   <div class="karne-hero"><span class="rate num">${pct(p.winRate)}</span><p>${p.games} oyunda ${p.wins} kez çıktı. ${rankLine}</p></div>
   <div class="panel stat-grid">
     <div><span class="v num ${cls(p.avgTotal)}">${formatPoints(p.avgTotal)}</span><span class="l">Ortalama</span></div>
@@ -948,15 +1010,14 @@ views.player = () => {
   </div>
   ${weak ? `<p class="insight bad">En çok zorlandığı ceza <strong>${esc(weak.name)}</strong>: payı ${pct(p.types[weak.id].share)}, adil pay %25.</p>` : ''}
   ${strong ? `<p class="insight good">En iyi olduğu ceza <strong>${esc(strong.name)}</strong>: payı ${pct(p.types[strong.id].share)}, adil pay %25.</p>` : ''}
+  ${trendSection(p)}
   <div class="section"><h2>Ceza karnesi</h2>
     <div class="panel">${HAND_TYPES.map(t => shareRow(t, p.types[t.id])).join('')}</div>
     <p class="hint" style="margin-top:10px">Pay: o elde dağıtılanların yüzde kaçını aldığı. Dört kişide adil pay %25, çubuktaki çizgi onu gösterir. Cezada azı, kozda çoğu iyidir.</p>
   </div>
+  ${choiceSection(p)}
   ${p.spellings.length > 1 ? `<p class="hint">Kayıtlardaki yazımlar: ${esc(p.spellings.join(', '))}</p>` : ''}
-  ${grouped && analysis.players.length > 1 ? `<div class="section"><h2>İsim birleştirme</h2>
-    ${linked.length ? `<div class="panel" style="padding:0 14px">${linked.map(l => `<div class="toggle-row"><span><span class="t">${esc(l.label)}</span><br><span class="d">bu oyuncuyla birleştirildi</span></span><button class="btn btn-ghost" data-action="player-split" data-from="${esc(l.from)}">Ayır</button></div>`).join('')}</div>` : ''}
-    <div class="stack"><button class="btn btn-block" data-action="player-merge">Başka bir isimle birleştir</button></div>
-  </div>` : ''}
+  ${adminSection(p, aliases, analysis)}
 </div>`;
 };
 
@@ -965,8 +1026,10 @@ Object.assign(actions, {
   async 'player-merge'() {
     const { p, analysis } = currentPlayer();
     if (!p) return;
-    const others = analysis.players.filter(x => x.key !== p.key).sort((a, b) => b.games - a.games || a.name.localeCompare(b.name, 'tr-TR'));
-    const i = await choose(`${p.name} başka hangi isimle kayıtlı?`, others.map(o => `${o.name} (${o.games} oyun)`));
+    // Resmi listedekiler önce: listede olmayan bir yazım çoğunlukla onlardan birine bağlanır.
+    const others = analysis.players.filter(x => x.key !== p.key)
+      .sort((a, b) => Number(b.member) - Number(a.member) || b.games - a.games || a.name.localeCompare(b.name, 'tr-TR'));
+    const i = await choose(`${p.name} aslında kim?`, others.map(o => (o.games ? `${o.name} (${o.games} oyun)` : `${o.name} (henüz oyun yok)`)));
     if (i < 0) return;
     const target = others[i];
     if (!(await ask(`${p.name} ile ${target.name} aynı kişi sayılsın mı? Bütün telefonlarda tek oyuncu olarak görünür; sonra ayırabilirsiniz.`, { okLabel: 'Birleştir' }))) return;
@@ -986,6 +1049,34 @@ Object.assign(actions, {
     await syncSoon({ refresh: true });
     render();
     toast(`${label} ayrıldı`);
+  },
+  async 'member-remove'() {
+    const { p } = currentPlayer();
+    if (!p) return;
+    if (!(await ask(`${p.name} resmi listeden çıkarılsın mı? Oyunları silinmez.`, { okLabel: 'Listeden çıkar', danger: true }))) return;
+    for (const key of new Set([p.key, ...p.keys])) {
+      const r = await group.removeMember(key);
+      if (!r.ok) return toast(r.error);
+    }
+    await syncSoon({ refresh: true });
+    if (p.games === 0) setView('stats'); else render();
+    toast(`${p.name} resmi listeden çıkarıldı`);
+  },
+  'admin-login'() {
+    return groupTask(async () => {
+      const v = await askText('Yönetici anahtarı', { placeholder: 'ABCD-2345-EFGH-6789', okLabel: 'Giriş', autocapitalize: 'characters', maxLength: 40 });
+      if (!v) return;
+      const r = await group.adminLogin(v);
+      if (!r.ok) return toast(r.error);
+      render();
+      toast('Yönetici olarak giriş yapıldı');
+    });
+  },
+  async 'admin-logout'() {
+    if (!(await ask('Bu telefonda yönetici çıkışı yapılsın mı? Anahtarı yeniden girerek dönebilirsiniz.', { okLabel: 'Çıkış yap' }))) return;
+    group.adminLogout();
+    render();
+    toast('Yönetici çıkışı yapıldı');
   },
 });
 

@@ -2,12 +2,11 @@
 
 export const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 export const CODE_LENGTH = 8;
+export const ADMIN_KEY_LENGTH = 16; // yönetici anahtarı: ~80 bit, "XXXX-XXXX-XXXX-XXXX"
 
-const VALID = new RegExp(`^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`);
-
-function clean(text) {
+function clean(text, length = CODE_LENGTH) {
   const c = String(text).toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
-  return VALID.test(c) ? c : null;
+  return c.length === length && [...c].every(ch => CODE_ALPHABET.includes(ch)) ? c : null;
 }
 
 // Küçük harf, tire/boşluk ve O/0, I/L/1 karışıklığı tolere edilir. Bütün girdi kod değilse metindeki her tireli
@@ -29,7 +28,11 @@ export function normalizeCode(input) {
 }
 
 export function formatCode(code) {
-  return `${code.slice(0, 4)}-${code.slice(4)}`;
+  return code.match(/.{1,4}/g).join('-');
+}
+
+export function normalizeAdminKey(input) {
+  return input === null || input === undefined ? null : clean(input, ADMIN_KEY_LENGTH);
 }
 
 // Davet metni: kod en başta, böylece yapıştırılan metinde (tek satırlık alan satır sonlarını silse de) ilk aday gerçek koddur.
@@ -38,7 +41,7 @@ export function inviteText({ code, name }) {
 }
 
 // 256 bayt değeri 32'ye tam bölünür: her harf eşit olasılıklı.
-export function generateCode(fill = bytes => crypto.getRandomValues(bytes)) {
-  const bytes = fill(new Uint8Array(CODE_LENGTH));
+export function generateCode(fill = bytes => crypto.getRandomValues(bytes), length = CODE_LENGTH) {
+  const bytes = fill(new Uint8Array(length));
   return Array.from(bytes, b => CODE_ALPHABET[b % 32]).join('');
 }

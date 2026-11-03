@@ -42,10 +42,18 @@ Android: Chrome menüsü → "Ana ekrana ekle" / "Uygulamayı yükle".
   - Kazanma yüzdesi sıralaması grubun bütün oyunlarından çıkar. Sıralamaya girmek için en az 3 oyun gerekir.
   - Bir oyuncuya dokununca ceza karnesi açılır. Her ceza ve kozda oyuncunun payı adil paya (%25) göre gösterilir;
     en çok zorlandığı ve en iyi olduğu ceza ayrıca belirtilir.
-- **İsimler:**
-  - Büyük/küçük harf ve Türkçe karakter farkı kendiliğinden birleşir ("Çağrı" = "Cagri").
-  - Lakaplar için oyuncunun karnesinde **Başka bir isimle birleştir** kullanılır. Birleştirme bütün telefonlarda geçerlidir,
-    **Ayır** ile geri alınır.
+- **Karne:** Kazanma yüzdesi, ceza karnesi ve en çok zorlandığı ceza gösterilir. **Gidişat** son 5 oyunu genelle karşılaştırır
+  ve 6. oyundan sonra görünür. **Kendi seçtiği eller** dağıtırken seçtiği ellerdeki payı başkalarının seçtiklerindekiyle
+  karşılaştırır.
+- **Resmi liste ve isimler:**
+  - Grubun oyuncu listesini yönetici belirler. Sıralamada bu yazımlar görünür; oyunu olmayanlar en altta "Henüz oyun yok"
+    diye durur.
+  - Büyük/küçük harf ve Türkçe karakter farkı kendiliğinden birleşir ("Başbuğ" = "basbug").
+  - Listede olmayan bir yazım yalnızca yöneticide "Listede yok" diye işaretlenir.
+- **Yönetici:**
+  - İsim birleştirme, **Ayır** ve resmi listeden çıkarma yalnızca yöneticinin telefonunda görünür. Giriş: Ayarlar → Grup →
+    **Yönetici girişi**, yönetici anahtarıyla.
+  - Sunucu anahtarı denetler, başkası denese bile yapamaz.
   - Aynı oyunda birlikte oynamış iki isim birleştirilemez.
 - **Veri:**
   - Gruptayken biten oyunlar (isimler ve eller) grubun Cloudflare'deki ortak kaydına da gider.
@@ -98,5 +106,13 @@ Derleme adımı ve bağımlılık yok. Tasarım: `docs/superpowers/specs/`, plan
 curl -s -X POST -H 'Content-Type: application/json' -d '{"name":"Meşe Park King"}' https://king-skor.okavak.workers.dev/groups
 ```
 
-Yanıttaki `code` gruba katılma kodudur. Herkesi açılışta bu gruba davet etmek için `config.js`'te
+Yanıttaki `code` gruba katılma kodudur; `adminKey` yönetici anahtarıdır ve yalnızca bu yanıtta bir kez görünür (sunucu
+yalnızca özetini saklar). Resmi listeyi yüklemek:
+
+```bash
+curl -s -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer <adminKey>" \
+  -d '{"names":["Onur","Ozan"]}' https://king-skor.okavak.workers.dev/groups/<code>/members
+```
+
+Herkesi açılışta bu gruba davet etmek için `config.js`'te
 `INVITE = { code: '<kod>', name: '<ad>' }` yazıp `./deploy.sh` ile yayınlayın.

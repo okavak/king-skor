@@ -33,7 +33,7 @@ const find = (analysis, key) => analysis.players.find(p => p.key === key);
 test('summarizeGame records totals, outcomes and per-type units, points and kings', () => {
   const g = fullGame({ ...DEFAULT_RULES, kingEndsGame: false });
   const s = summarizeGame(g);
-  assert.equal(s.v, 1);
+  assert.equal(s.v, 2);
   assert.equal(s.id, g.id);
   assert.equal(s.at, '2026-10-02T21:00:00.000Z');
   const [ali, ayse, , zeynep] = s.seats;
@@ -159,3 +159,46 @@ test('aggregate ignores unknown hand types and never writes to Object.prototype'
   assert.deepEqual(Object.keys(a.players[0].types), HAND_TYPES.map(x => x.id));
   assert.equal(a.players[0].types.kiz.units, 4);
 });
+
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+test('choice: share in hands the player chose as dealer versus hands others chose, for ceza and koz', () => {
+  // dağıtan = el sırası % 4 → 0: koltuk 0 seçti, 1: koltuk 1, 2: koltuk 2, 3: koltuk 3, 4: koltuk 0
+  const g = gameOf(players, [['kiz', [2, 2, 0, 0]], ['kupa', [0, 13, 0, 0]], ['koz', [6, 0, 7, 0]], ['el', [13, 0, 0, 0]], ['koz', [8, 5, 0, 0]]]);
+  const a = analyze([g]);
+  const ali = find(a, 'ali').choice;
+  assert.deepEqual([ali.ceza.own.hands, ali.ceza.other.hands, ali.koz.own.hands, ali.koz.other.hands], [1, 2, 1, 1]);
+  assert.ok(near(ali.ceza.own.share, 0.5) && near(ali.ceza.other.share, 0.5));
+  assert.ok(near(ali.koz.own.share, 8 / 13) && near(ali.koz.other.share, 6 / 13));
+  const ayse = find(a, 'ayse').choice;
+  assert.ok(near(ayse.ceza.own.share, 1) && near(ayse.ceza.other.share, 0.25));
+  assert.deepEqual(ayse.koz.own, { hands: 0, share: null });
+  assert.ok(near(ayse.koz.other.share, (0 + 5 / 13) / 2));
+});
+
+test('recent: wins in the last 5 games, shown once a player has more than 5 games', () => {
+  const outs = ['out', 'out', 'sunk', 'sunk', 'sunk', 'out', 'out'];
+  const s = outs.map((o, i) => summary(`g${i}`, `2026-10-0${i + 1}`, [seat('A', 'a', 0, o)]));
+  const p = aggregate(s).players[0];
+  assert.deepEqual([p.games, p.wins], [7, 4]);
+  assert.deepEqual(p.recent, { games: 5, wins: 2, winRate: 0.4 });
+  assert.equal(aggregate(s.slice(0, 5)).players[0].recent, null, 'with 5 games the last 5 are all of them');
+});
+
+test('members: official spelling wins, members without games come last, others are flagged', () => {
+  const s = [
+    summary('1', '2026-10-01', [seat('ALİ', 'ali', 100, 'out'), seat('Basbug', 'basbug', -100, 'sunk'), seat('Misafir', 'misafir', 0, 'out'), seat('Hayrullah', 'hayrullah', 0, 'out')]),
+  ];
+  const members = [{ key: 'ali', name: 'Ali' }, { key: 'basbug', name: 'Başbuğ' }, { key: 'zeynel', name: 'Zeynel' }, { key: 'hayrullahabi', name: 'Hayrullah Abi' }];
+  const a = aggregate(s, { members, aliases: { hayrullah: 'hayrullahabi' } });
+  const by = k => a.players.find(p => p.key === k);
+  assert.deepEqual([by('ali').name, by('ali').member], ['Ali', true]);
+  assert.deepEqual([by('basbug').name, by('basbug').member], ['Başbuğ', true]);
+  assert.deepEqual([by('hayrullahabi').name, by('hayrullahabi').member, by('hayrullahabi').games], ['Hayrullah Abi', true, 1]);
+  assert.equal(by('misafir').member, false);
+  const z = by('zeynel');
+  assert.deepEqual([z.name, z.games, z.wins, z.winRate, z.rank, z.member, z.avgTotal, z.recent], ['Zeynel', 0, 0, null, null, true, null, null]);
+  assert.equal(a.players[a.players.length - 1].key, 'zeynel', 'members without games come last');
+  assert.equal(a.games, 1);
+});
+

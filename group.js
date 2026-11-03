@@ -1,8 +1,8 @@
 // group.js — ortak grup kaydının uygulama tarafı: üyelik, gönderim sırası (outbox) ve son analizin çevrimdışı kopyası.
 // Ağ hiçbir zaman beklenmez: her çağrı zaman aşımlıdır ve sonuç { ok, ... } olarak döner, istisna fırlatmaz.
-import { codeCandidates } from './groupcode.js';
+import { codeCandidates, normalizeAdminKey } from './groupcode.js';
 
-export const GROUP_KEYS = { group: 'king:v1:group', outbox: 'king:v1:outbox', analysis: 'king:v1:analysis' };
+export const GROUP_KEYS = { group: 'king:v1:group', outbox: 'king:v1:outbox', analysis: 'king:v1:analysis', admin: 'king:v1:groupAdmin' };
 
 const NETWORK_ERROR = 'İnternete bağlanılamadı';
 const NOT_FOUND = 'Bu kodla bir grup bulunamadı';
@@ -32,14 +32,15 @@ export function createGroupClient({ storage, fetch, apiBase, timeoutMs = 10000 }
     return Array.isArray(list) ? list : [];
   };
 
-  async function request(method, path, body) {
+  async function request(method, path, body, { auth } = {}) {
     if (!enabled) return { ok: false, status: 0, error: 'Grup sunucusu ayarlı değil' };
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const init = { method, signal: ctrl.signal };
+      const init = { method, signal: ctrl.signal, headers: {} };
+      if (auth) init.headers.Authorization = auth;
       if (body !== undefined) {
-        init.headers = { 'Content-Type': 'application/json' };
+        init.headers['Content-Type'] = 'application/json';
         init.body = JSON.stringify(body);
       }
       const res = await fetch(base + path, init);
@@ -59,6 +60,14 @@ export function createGroupClient({ storage, fetch, apiBase, timeoutMs = 10000 }
     return g && typeof g.code === 'string' && typeof g.name === 'string' ? { code: g.code, name: g.name } : null;
   }
   const groupPath = () => `/groups/${current().code}`;
+
+  // Yönetici anahtarı yalnızca kendi grubunda geçerli; başka gruba geçince kullanılmaz.
+  function adminKey() {
+    const a = read(GROUP_KEYS.admin, null);
+    const g = current();
+    return a && g && a.code === g.code && typeof a.key === 'string' ? a.key : null;
+  }
+  const adminAuth = () => (adminKey() ? `Bearer ${adminKey()}` : undefined);
 
   function updateCache(patch) {
     const c = cached();
@@ -120,8 +129,33 @@ export function createGroupClient({ storage, fetch, apiBase, timeoutMs = 10000 }
     },
 
     join(group) {
+      if (current()?.code !== group.code) write(GROUP_KEYS.admin, null);
       write(GROUP_KEYS.group, { code: group.code, name: group.name });
       write(GROUP_KEYS.analysis, null);
+    },
+
+    isAdmin: () => adminKey() !== null,
+
+    async adminLogin(input) {
+      const key = normalizeAdminKey(input);
+      if (!key) return { ok: false, error: 'Anahtar 16 karakter olmalı (ör. ABCD-2345-EFGH-6789)' };
+      if (!current()) return { ok: false, error: 'Bu telefon bir gruba katılmamış' };
+      const r = await request('GET', `${groupPath()}/admin`, undefined, { auth: `Bearer ${key}` });
+      if (r.ok) {
+        write(GROUP_KEYS.admin, { code: current().code, key });
+        return { ok: true };
+      }
+      return { ok: false, error: r.status === 401 || r.status === 403 ? 'Yönetici anahtarı yanlış' : r.error };
+    },
+
+    adminLogout() {
+      write(GROUP_KEYS.admin, null);
+    },
+
+    async removeMember(key) {
+      const r = await request('DELETE', `${groupPath()}/members/${encodeURIComponent(key)}`, undefined, { auth: adminAuth() });
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, members: r.data.members };
     },
 
     leave() {
@@ -151,14 +185,14 @@ export function createGroupClient({ storage, fetch, apiBase, timeoutMs = 10000 }
     },
 
     async merge(fromKey, toKey) {
-      const r = await request('PUT', `${groupPath()}/aliases`, { from: fromKey, to: toKey });
+      const r = await request('PUT', `${groupPath()}/aliases`, { from: fromKey, to: toKey }, { auth: adminAuth() });
       if (!r.ok) return { ok: false, error: r.error };
       updateCache({ aliases: r.data.aliases });
       return { ok: true, aliases: r.data.aliases };
     },
 
     async split(fromKey) {
-      const r = await request('DELETE', `${groupPath()}/aliases/${encodeURIComponent(fromKey)}`);
+      const r = await request('DELETE', `${groupPath()}/aliases/${encodeURIComponent(fromKey)}`, undefined, { auth: adminAuth() });
       if (!r.ok) return { ok: false, error: r.error };
       updateCache({ aliases: r.data.aliases });
       return { ok: true, aliases: r.data.aliases };

@@ -15,6 +15,7 @@ function fakeFetch(...responses) {
   const calls = [];
   const fn = async (url, init = {}) => {
     calls.push({ url, method: init.method || 'GET', body: init.body === undefined ? undefined : JSON.parse(init.body) });
+    fn.auth.push(init.headers?.Authorization ?? null);
     let next = responses.shift();
     if (typeof next === 'function') next = await next(url, init);
     if (next === undefined) throw new Error(`unexpected request ${url}`);
@@ -22,6 +23,7 @@ function fakeFetch(...responses) {
     return new Response(JSON.stringify(next.body ?? {}), { status: next.status ?? 200, headers: { 'Content-Type': 'application/json' } });
   };
   fn.calls = calls;
+  fn.auth = [];
   return fn;
 }
 
@@ -165,3 +167,57 @@ test('lookup tries each code in a pasted text until a group is found', async () 
   assert.deepEqual(await c.lookup('Aile-King grubu, kod: ABCD-2345'), { ok: true, group: { ...GROUP, games: 3 } });
   assert.deepEqual(fetch.calls.map(x => x.url), [`${API}/groups/A11EK1NG`, `${API}/groups/ABCD2345`]);
 });
+
+const KEY = 'ABCD2345EFGH6789';
+
+test('adminLogin keeps the key only when the server accepts it, and merges send it', async () => {
+  const fetch = fakeFetch({ status: 403, body: { error: 'Yönetici anahtarı yanlış' } }, { body: { ok: true } }, { body: { aliases: { memo: 'mehmet' } } });
+  const c = client(fetch);
+  c.join(GROUP);
+  assert.deepEqual(await c.adminLogin('ZZZZ-ZZZZ-ZZZZ-ZZZZ'), { ok: false, error: 'Yönetici anahtarı yanlış' });
+  assert.equal(c.isAdmin(), false);
+  assert.deepEqual(await c.adminLogin('abcd-2345-efgh-6789'), { ok: true });
+  assert.equal(c.isAdmin(), true);
+  assert.deepEqual(fetch.calls[1], { url: `${API}/groups/ABCD2345/admin`, method: 'GET', body: undefined });
+  assert.equal(fetch.auth[1], `Bearer ${KEY}`);
+  await c.merge('memo', 'mehmet');
+  assert.equal(fetch.auth[2], `Bearer ${KEY}`);
+});
+
+test('adminLogin rejects a malformed key without asking the server', async () => {
+  const fetch = fakeFetch();
+  const c = client(fetch);
+  c.join(GROUP);
+  assert.deepEqual(await c.adminLogin('1234'), { ok: false, error: 'Anahtar 16 karakter olmalı (ör. ABCD-2345-EFGH-6789)' });
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('without the admin key a merge reports that only the admin can do it, and no key is sent', async () => {
+  const fetch = fakeFetch({ status: 401, body: { error: 'Bu işlemi yalnızca grup yöneticisi yapabilir' } });
+  const c = client(fetch);
+  c.join(GROUP);
+  assert.deepEqual(await c.merge('memo', 'mehmet'), { ok: false, error: 'Bu işlemi yalnızca grup yöneticisi yapabilir' });
+  assert.equal(fetch.auth[0], null);
+});
+
+test('removeMember deletes from the official list with the admin key', async () => {
+  const fetch = fakeFetch({ body: { ok: true } }, { body: { members: [{ key: 'onur', name: 'Onur' }] } });
+  const c = client(fetch);
+  c.join(GROUP);
+  await c.adminLogin(KEY);
+  assert.deepEqual(await c.removeMember('zeynel'), { ok: true, members: [{ key: 'onur', name: 'Onur' }] });
+  assert.deepEqual(fetch.calls[1], { url: `${API}/groups/ABCD2345/members/zeynel`, method: 'DELETE', body: undefined });
+  assert.equal(fetch.auth[1], `Bearer ${KEY}`);
+});
+
+test('the admin key belongs to its group: leaving or joining another group drops it', async () => {
+  const c = client(fakeFetch({ body: { ok: true } }));
+  c.join(GROUP);
+  await c.adminLogin(KEY);
+  c.join({ code: 'WXYZ6789', name: 'Pazar' });
+  assert.equal(c.isAdmin(), false);
+  c.join(GROUP);
+  c.leave();
+  assert.equal(c.isAdmin(), false);
+});
+
