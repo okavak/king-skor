@@ -236,3 +236,8 @@ radar grafikler, abonelik/paywall, reklam.
   iki temada da açık altın #E9B949, üstünde lacivert yazı 8.7:1. İnce çizgi ve simgeler (koz hakkı daireleri,
   dağıtan çizgisi, taç kenarı, odak çerçevesi) açık temada daha koyu altın (`--gold-line`).
 - Paylaşım görselinde artı puanlar yeşil; sonuç cümlesinde çıkanlar yeşil, batanlar kırmızı, King altın.
+
+## 10. Ortak grup kaydı ve analiz (2026-11-03)
+
+Kullanıcı isteğiyle bölüm 3'teki "çoklu cihaz senkronu" ve bölüm 7'deki "ortak tablolar" artık kapsamda; A4 değişti:
+gruptayken biten oyunlar Cloudflare Worker + D1'deki ortak kayda da gider. Ayrıntılar: `2026-11-03-ortak-grup-design.md`.
