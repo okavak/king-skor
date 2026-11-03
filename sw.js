@@ -4,7 +4,7 @@ const CACHE = `king-skor-${VERSION}`;
 // Açılışta yüklenen her yerel dosya burada olmalı; eksik modül internetsiz açılışı boş ekranda bırakır.
 // tests/sw.test.js import zincirini tarayıp bu listeyi denetler (deploy.sh testleri yayından önce çalıştırır).
 const ASSETS = [
-  './', './index.html', './app.css', './app.js', './rules.js', './store.js', './roster.js', './version.js',
+  './', './index.html', './app.css', './app.js', './rules.js', './store.js', './roster.js', './names.js', './analysis.js', './groupcode.js', './group.js', './config.js', './version.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
   './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
 ];

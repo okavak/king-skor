@@ -8,7 +8,7 @@ const strip = src => src
   .replace(/^export\s+(const|function|let|class)\s/gm, '$1 ')
   .replace(/^export\s*\{[^}]*\};?\s*$/gm, '');
 
-const files = ['version.js', 'rules.js', 'store.js', 'app.js'];
+const files = ['version.js', 'config.js', 'names.js', 'groupcode.js', 'rules.js', 'analysis.js', 'store.js', 'roster.js', 'group.js', 'app.js'];
 const seen = new Map();
 for (const f of files) {
   for (const m of strip(read(f)).matchAll(/^(?:const|let|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
@@ -18,12 +18,13 @@ for (const f of files) {
 }
 
 let html = read('index.html');
-html = html.replace('<link rel="stylesheet" href="./app.css">', `<style>\n${read('app.css')}\n</style>`);
+// Yerine koyma işlev ile: dosya içeriğindeki "$`", "$'", "$&" String.replace'te özel desen sayılmasın.
+html = html.replace('<link rel="stylesheet" href="./app.css">', () => `<style>\n${read('app.css')}\n</style>`);
 html = html.replace(/<link rel="manifest"[^>]*>\n?/, '');
 html = html.replace(/<link rel="(apple-touch-icon|icon)"[^>]*>\n?/g, '');
 const js = files.map(f => `// ---- ${f}\n${strip(read(f))}`).join('\n');
 if (js.includes('</script')) throw new Error('JS içinde </script> var; paket bozulur');
-html = html.replace('<script type="module" src="./app.js"></script>', `<script>window.__KING_BUNDLE__ = true;</script>\n<script type="module">\n${js}\n</script>`);
+html = html.replace('<script type="module" src="./app.js"></script>', () => `<script>window.__KING_BUNDLE__ = true;</script>\n<script type="module">\n${js}\n</script>`);
 mkdirSync(new URL('dist/', root), { recursive: true });
 writeFileSync(new URL('dist/king-skor.html', root), html);
 // Artifact sürümü: yayın iskeleti doctype/html/head/body ve viewport'u kendisi ekler.

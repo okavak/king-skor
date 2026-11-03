@@ -264,12 +264,68 @@ input { font: inherit; color: inherit; }
 .check { text-align: center; font-size: 13px; color: var(--muted); padding: 10px 0 0; }
 .check.bad { color: var(--red); }
 
+/* analiz: sıralama */
+.source { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+.leader-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 12px; width: 100%; min-height: 66px; padding: 10px 16px; text-align: left; }
+.leader-row + .leader-row { border-top: 1px solid var(--line); }
+.leader-row .rank { font-size: 20px; color: var(--muted); text-align: center; }
+.leader-row.first .rank { color: var(--gold-text); }
+.leader-row .who { min-width: 0; }
+.leader-row .n { display: block; font-weight: 600; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leader-row .s { display: block; font-size: 13px; color: var(--muted); }
+.leader-row .rate { font-size: 26px; }
+.leader-row.unranked .rate { color: var(--muted); font-size: 20px; }
+
+/* analiz: kişisel karne */
+.karne-hero { text-align: center; padding: 4px 8px 18px; }
+.karne-hero .rate { display: block; font-size: 64px; line-height: 1; letter-spacing: -0.03em; }
+.karne-hero p { margin: 10px 0 0; color: var(--ink-2); font-size: 15px; text-wrap: balance; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.stat-grid > div { padding: 12px 4px; text-align: center; min-width: 0; }
+.stat-grid > div + div { border-left: 1px solid var(--line); }
+.stat-grid .v { display: block; font-size: 19px; }
+.stat-grid .l { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.insight { margin: 10px 0 0; padding: 12px 14px; border-radius: var(--radius-s); font-size: 15px; line-height: 1.4; color: var(--ink); }
+.insight.bad { background: var(--red-soft); }
+.insight.good { background: var(--green-soft); }
+/* çubuk sütunu her satırda aynı genişlikte: satırlar arası karşılaştırma için hizalı kalır */
+.share-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) clamp(72px, 25vw, 120px) 46px; align-items: center; gap: 12px; min-height: 60px; padding: 8px 14px; }
+.share-row + .share-row { border-top: 1px solid var(--line); }
+.share-row .n { display: block; font-weight: 600; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.share-row .s { display: block; font-size: 12px; color: var(--muted); }
+.share-row .pct { text-align: right; font-size: 17px; color: var(--ink-2); }
+.share-row.none .mcard { opacity: .45; }
+.share-row.none .pct { color: var(--muted); }
+.pct.bad { color: var(--red); }
+.pct.good { color: var(--green); }
+.bar { position: relative; height: 10px; border-radius: 5px; background: var(--surface-2); }
+.bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--muted); }
+.bar .fill.bad { background: var(--red); }
+.bar .fill.good { background: var(--green); }
+.bar .fair { position: absolute; left: calc(50% - 1px); top: -5px; bottom: -5px; width: 2px; border-radius: 1px; background: var(--ink); opacity: .7; }
+.dialog { max-height: 86dvh; overflow-y: auto; }
+
 /* istatistik tablosu */
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th { text-align: right; font-weight: 600; color: var(--muted); font-size: 12px; padding: 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .table th:first-child, .table td:first-child { text-align: left; }
 .table td { text-align: right; padding: 10px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .table tr:last-child td { border-bottom: 0; }
+
+/* ortak grup */
+.group-panel { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.group-intro { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+.group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.group-name { font-weight: 700; font-size: 18px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-code { font-size: 17px; letter-spacing: .06em; color: var(--gold-text); white-space: nowrap; }
+.group-status { margin: 0; font-size: 14px; color: var(--muted); }
+.group-status.wait { color: var(--ink-2); font-weight: 600; }
+.group-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.group-actions .btn-primary { min-height: var(--tap); font-size: 16px; }
+.group-actions.single { grid-template-columns: 1fr; }
+.invite-card { margin-top: 14px; }
+.group-line { text-align: center; margin: 0; }
+.dialog label { font-size: 16px; line-height: 1.45; }
 
 /* onay diyaloğu */
 .dialog-backdrop { position: fixed; inset: 0; background: rgba(10, 14, 28, .55); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 40; animation: fade .15s ease; }

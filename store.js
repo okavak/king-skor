@@ -1,5 +1,6 @@
 // store.js — localStorage üstünde kalıcılık. Tüm okuma/yazmalar try/catch ile korunur.
 import { DEFAULT_RULES, cloneRules, isValidGame } from './rules.js';
+import { nameKey } from './names.js';
 
 const PREFIX = 'king:v1:';
 const KEYS = {
@@ -13,7 +14,7 @@ const HISTORY_CAP = 200;
 const NAMES_CAP = 50;
 const EXPORT_VERSION = 1;
 
-const normName = n => String(n).trim().toLocaleLowerCase('tr-TR');
+const normName = nameKey;
 
 export function createStore(storage) {
   function read(key, fallback) {

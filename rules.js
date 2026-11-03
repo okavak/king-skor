@@ -62,8 +62,11 @@ export function handScores(hand, rules) {
   return hand.counts.map(c => (c * per) || 0); // -0 → 0
 }
 
+// Tür adları dışarıdan (yedek, sunucu) gelir: "__proto__", "constructor" gibi miras özellikler tür sayılmaz.
+const isHandType = type => typeof type === 'string' && Object.hasOwn(TYPE_BY_ID, type);
+
 export function validateCounts(type, counts) {
-  const t = TYPE_BY_ID[type];
+  const t = isHandType(type) ? TYPE_BY_ID[type] : null;
   if (!t) return { ok: false, error: 'Bilinmeyen el türü' };
   if (!Array.isArray(counts) || counts.length !== PLAYER_COUNT) return { ok: false, error: 'Dört oyuncu için sayı gerekli' };
   if (counts.some(c => !Number.isInteger(c) || c < 0 || c > t.total)) {
@@ -205,34 +208,6 @@ export function speechText(game) {
   return game.players.map((name, i) => `${name} ${totals[i] < 0 ? 'eksi ' : ''}${Math.abs(totals[i])}.`).join(' ');
 }
 
-function nameKey(name) {
-  return String(name).trim().toLocaleLowerCase('tr-TR');
-}
-
-export function playerStats(games) {
-  const map = new Map();
-  for (const g of games) {
-    if (!isValidGame(g)) continue;
-    const totals = gameTotals(g);
-    const result = outcomes(g).bySeat; // kazanmak = çıkmak (King dahil)
-    const threshold = g.rules.kingThreshold ?? DEFAULT_RULES.kingThreshold;
-    g.players.forEach((name, seat) => {
-      const key = nameKey(name);
-      const p = map.get(key) || { name: String(name).trim(), games: 0, wins: 0, sum: 0, best: -Infinity, worst: Infinity, kings: 0 };
-      p.games += 1;
-      if (result[seat] !== 'sunk') p.wins += 1;
-      p.sum += totals[seat];
-      p.best = Math.max(p.best, totals[seat]);
-      p.worst = Math.min(p.worst, totals[seat]);
-      p.kings += g.hands.filter(h => h.type === 'koz' && h.counts[seat] >= threshold).length;
-      map.set(key, p);
-    });
-  }
-  return [...map.values()]
-    .map(({ sum, ...p }) => ({ ...p, avgTotal: Math.round(sum / p.games) }))
-    .sort((a, b) => b.wins - a.wins || b.avgTotal - a.avgTotal || a.name.localeCompare(b.name, 'tr-TR'));
-}
-
 export function expectedGameTotal(rules) {
   let cezaSet = 0;
   for (const t of HAND_TYPES) if (t.ceza) cezaSet += t.total * rules.pointsPer[t.id];
@@ -246,7 +221,7 @@ export function isValidGame(obj) {
   if (!Number.isInteger(obj.firstDealer) || obj.firstDealer < 0 || obj.firstDealer >= PLAYER_COUNT) return false;
   if (!obj.rules || typeof obj.rules.pointsPer !== 'object') return false;
   if (!Array.isArray(obj.hands)) return false;
-  return obj.hands.every(h => h && TYPE_BY_ID[h.type]
+  return obj.hands.every(h => h && isHandType(h.type)
     && Number.isInteger(h.dealer) && h.dealer >= 0 && h.dealer < PLAYER_COUNT
     && validateCounts(h.type, h.counts).ok);
 }

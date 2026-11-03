@@ -2,12 +2,17 @@
 import {
   HAND_TYPES, TYPE_BY_ID, SUITS, PLAYER_COUNT, DEFAULT_RULES, cloneRules, handsTotal, createGame, makeHand,
   handScores, validateCounts, formatPoints, dealerForHand, currentDealer, gameTotals, quotaState, availableTypes,
-  isFinished, withHand, withHandReplaced, withoutHand, standings, summaryText, speechText, playerStats, expectedGameTotal,
+  isFinished, withHand, withHandReplaced, withoutHand, standings, summaryText, speechText, expectedGameTotal,
   kingSeat, outcomes, withFirstDealer,
 } from './rules.js';
 import { createStore } from './store.js';
+import { analyze, MIN_RANKED_GAMES, FAIR_SHARE } from './analysis.js';
+import { nameKey, resolveAlias } from './names.js';
 import { toggleSeat, seatOf, addToRoster, removeFromRoster, ensureInRoster, nameKeyOf } from './roster.js';
 import { APP_VERSION } from './version.js';
+import { createGroupClient } from './group.js';
+import { formatCode, inviteText } from './groupcode.js';
+import { API_BASE, INVITE } from './config.js';
 
 // ---------- depolama ----------
 function safeStorage() {
@@ -26,6 +31,8 @@ function safeStorage() {
 }
 const storage = safeStorage();
 const store = createStore(storage.impl);
+// Ortak grup kaydı. Geliştirmede sunucu adresi localStorage ile ezilebilir (king:v1:apiBase); yayında config.js.
+const group = createGroupClient({ storage: storage.impl, fetch: (...a) => fetch(...a), apiBase: storage.impl.getItem('king:v1:apiBase') || API_BASE });
 
 // ---------- durum ----------
 const state = {
@@ -87,12 +94,12 @@ function toast(msg, opts = {}) {
 }
 
 let closeDialog = null;
-function ask(message, { okLabel = 'Evet', danger = false } = {}) {
+function ask(message, { okLabel = 'Evet', cancelLabel = 'Vazgeç', danger = false } = {}) {
   return new Promise(resolve => {
     closeDialog = value => { $dialogRoot.innerHTML = ''; closeDialog = null; resolve(value); };
     $dialogRoot.innerHTML = `<div class="dialog-backdrop"><div class="dialog" role="alertdialog" aria-modal="true" aria-label="Onay">
       <p>${esc(message)}</p>
-      <div class="actions"><button class="btn" data-dialog="no">Vazgeç</button><button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-dialog="yes">${esc(okLabel)}</button></div>
+      <div class="actions"><button class="btn" data-dialog="no">${esc(cancelLabel)}</button><button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-dialog="yes">${esc(okLabel)}</button></div>
     </div></div>`;
     $dialogRoot.onclick = e => {
       const b = e.target.closest('[data-dialog]');
@@ -100,6 +107,24 @@ function ask(message, { okLabel = 'Evet', danger = false } = {}) {
       else if (e.target.classList.contains('dialog-backdrop')) closeDialog(false);
     };
     $dialogRoot.querySelector('[data-dialog="no"]').focus();
+  });
+}
+
+function askText(message, { placeholder = '', okLabel = 'Tamam', value = '', maxLength = 40, autocapitalize = 'words' } = {}) {
+  return new Promise(resolve => {
+    closeDialog = v => { $dialogRoot.innerHTML = ''; closeDialog = null; resolve(typeof v === 'string' ? v : null); };
+    $dialogRoot.innerHTML = `<div class="dialog-backdrop"><form class="dialog" role="dialog" aria-modal="true" aria-label="${esc(message)}">
+      <label for="ask-text">${esc(message)}</label>
+      <input class="input" id="ask-text" value="${esc(value)}" placeholder="${esc(placeholder)}" maxlength="${maxLength}" autocomplete="off" autocapitalize="${autocapitalize}" spellcheck="false" enterkeyhint="done">
+      <div class="actions"><button class="btn" type="button" data-dialog="no">Vazgeç</button><button class="btn btn-primary" type="submit">${esc(okLabel)}</button></div>
+    </form></div>`;
+    const form = $dialogRoot.querySelector('form');
+    const input = form.querySelector('input');
+    form.onsubmit = e => { e.preventDefault(); const v = input.value.trim(); if (v) closeDialog(v); };
+    $dialogRoot.onclick = e => {
+      if (e.target.closest('[data-dialog="no"]') || e.target.classList.contains('dialog-backdrop')) closeDialog(null);
+    };
+    input.focus();
   });
 }
 
@@ -177,7 +202,34 @@ function archive(game) {
   const done = { ...game, finishedAt: new Date().toISOString() };
   store.addToHistory(done);
   store.clearCurrent();
+  queueGame('put', done.id);
   return done;
+}
+
+// ---------- ortak grup: gönderim sırası ----------
+// Ağ hiçbir zaman beklenmez: oyun önce telefona yazılır, sıraya girer, internet olunca arka planda gider.
+function queueGame(op, id) {
+  if (!group.current()) return;
+  group.enqueue(op, id);
+  syncSoon();
+}
+
+// Kullanıcı yazıyorken ya da bir panel/diyalog açıkken ekranı yeniden çizme.
+function rerenderIfIdle() {
+  const busy = state.sheet || closeDialog || $dialogRoot.innerHTML || document.activeElement?.matches?.('input, textarea');
+  if (!busy && ['home', 'settings', 'stats', 'player'].includes(state.view)) render();
+}
+
+let syncing = null;
+function syncSoon({ refresh = false } = {}) {
+  if (!group.current()) return Promise.resolve();
+  if (syncing) return syncing;
+  syncing = (async () => {
+    await group.flush(id => store.loadHistory().find(g => g.id === id) || null);
+    if (refresh || state.view === 'stats' || state.view === 'player') await group.refresh();
+    rerenderIfIdle();
+  })().catch(() => {}).finally(() => { syncing = null; });
+  return syncing;
 }
 
 // ---------- görünümler ----------
@@ -204,6 +256,21 @@ function historyItem(g) {
   </button>`;
 }
 
+function groupLine() {
+  const g = group.current();
+  if (!g) return '';
+  const n = group.pending();
+  return `<p class="hint group-line">Grup: <strong>${esc(g.name)}</strong>${n ? `. ${n} oyun gönderilmeyi bekliyor.` : ''}</p>`;
+}
+
+function inviteCard() {
+  if (!INVITE || !group.enabled || group.current()) return '';
+  return `<div class="panel group-panel invite-card">
+    <p class="group-intro"><strong>${esc(INVITE.name)}</strong> açıldı: herkesin oyunları tek sıralamada. Katılınca bu telefondaki oyunlar da eklenir.</p>
+    <div class="group-actions single"><button class="btn btn-primary" data-action="invite-join">Gruba katıl</button></div>
+  </div>`;
+}
+
 views.home = () => {
   const g = state.game;
   const history = store.loadHistory();
@@ -214,11 +281,12 @@ views.home = () => {
     <span><span class="title">${esc(g.players.join(', '))}</span><span class="sub">${g.hands.length}/${handsTotal(g.rules)} el oynandı, ${esc(g.players[currentDealer(g)])} konuşuyor</span></span>
     <span class="btn btn-primary" aria-hidden="true">Devam et</span></button>` : ''}
   <button class="btn ${g ? '' : 'btn-primary'} btn-block" data-action="new-game">Yeni oyun</button>
+  ${inviteCard()}
   ${showHint ? installHint() : ''}
   <section class="section"><h2>Geçmiş oyunlar</h2>
     ${history.length ? `<div class="panel">${history.map(historyItem).join('')}</div>` : '<div class="panel empty">Henüz biten oyun yok. İlk oyunu başlatın, sonucu burada görün.</div>'}
   </section>
-  <div class="stack"><button class="btn btn-block" data-action="go" data-view="stats">İstatistikler</button></div>
+  <div class="stack"><button class="btn btn-block" data-action="go" data-view="stats">Analiz ve sıralama</button>${groupLine()}</div>
   <p class="hint" style="text-align:center;margin-top:24px">Sürüm ${esc(APP_VERSION)}</p>
 </div>`;
 };
@@ -260,6 +328,7 @@ Object.assign(actions, {
     state.viewGame = null;
     if (view === 'settings') state.settings = store.loadSettings();
     setView(view);
+    if (view === 'stats') syncSoon({ refresh: true });
   },
   continue() { state.viewGame = null; setView('board'); },
   'new-game'() {
@@ -677,8 +746,11 @@ Object.assign(actions, {
     state.menuOpen = false;
     render();
     if (!(await ask('Bu oyun tamamen silinsin mi? Skorlar geçmişe kaydedilmez.', { okLabel: 'Oyunu sil', danger: true }))) return;
+    const abandoned = state.game?.id;
     state.game = null;
     store.clearCurrent();
+    // "Son eli düzelt" ile yeniden açılmış bir oyun ortak kayıtta olabilir; orada da silinir (hiç gönderilmediyse zararsız).
+    if (abandoned) queueGame('delete', abandoned);
     setView('home');
     toast('Oyun silindi');
   },
@@ -693,11 +765,13 @@ Object.assign(actions, {
   async 'delete-history'({ id }) {
     state.menuOpen = false;
     render();
-    if (!(await ask('Bu oyun geçmişten silinsin mi?', { okLabel: 'Sil', danger: true }))) return;
+    const where = group.current() ? 'geçmişten ve grubun ortak kaydından' : 'geçmişten';
+    if (!(await ask(`Bu oyun ${where} silinsin mi?`, { okLabel: 'Sil', danger: true }))) return;
     store.removeFromHistory(id);
+    queueGame('delete', id);
     state.viewGame = null;
     setView('home');
-    toast('Oyun geçmişten silindi');
+    toast(group.current() ? 'Oyun geçmişten ve grubun ortak kaydından silindi' : 'Oyun geçmişten silindi');
   },
   rematch() {
     const g = state.finishedGame;
@@ -721,12 +795,37 @@ Object.assign(actions, {
 });
 
 // ---------- ayarlar ve istatistik ----------
+// Grup yönetici tarafından bir kez kurulur; uygulamada yalnızca katılım var (tek topluluk, yanlışlıkla ikinci grup açılmasın).
+function joinButtons() {
+  return INVITE
+    ? `<div class="group-actions"><button class="btn btn-primary" data-action="invite-join">${esc(INVITE.name)} grubuna katıl</button><button class="btn btn-ghost" data-action="group-join">Kodla katıl</button></div>`
+    : '<div class="group-actions single"><button class="btn btn-primary" data-action="group-join">Gruba katıl</button></div>';
+}
+
+function groupSection() {
+  if (!group.enabled) return '';
+  const g = group.current();
+  if (!g) {
+    return `<div class="section" style="margin-top:8px"><h2>Grup</h2><div class="panel group-panel">
+      <p class="group-intro">Grubun bütün telefonlarındaki oyunlar tek yerde toplanır. Sıralama ve kişisel karne herkesin oyunlarından çıkar. Katılınca bu telefondaki oyunlar da eklenir.</p>
+      ${joinButtons()}
+    </div></div>`;
+  }
+  const n = group.pending();
+  return `<div class="section" style="margin-top:8px"><h2>Grup</h2><div class="panel group-panel">
+    <div class="group-head"><span class="group-name">${esc(g.name)}</span><span class="group-code num" aria-label="Grup kodu">${esc(formatCode(g.code))}</span></div>
+    <p class="group-status${n ? ' wait' : ''}">${n ? `${n} oyun gönderilmeyi bekliyor; internet olunca kendiliğinden gider.` : 'Bütün oyunlar ortak kayıtta.'}</p>
+    <div class="group-actions"><button class="btn btn-primary" data-action="group-invite">Davet et</button><button class="btn btn-ghost" data-action="group-leave">Gruptan çık</button></div>
+  </div></div>`;
+}
+
 views.settings = () => {
   const s = state.settings || (state.settings = store.loadSettings());
   const row = (key, label, desc) => `<div class="toggle-row"><span><span class="t">${label}</span><br><span class="d">${desc}</span></span><button class="switch" role="switch" aria-checked="${Boolean(s[key])}" data-action="toggle" data-key="${key}" aria-label="${label}"></button></div>`;
   return `<div class="screen">
   <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>Ayarlar</h1><span></span></header>
-  <p class="hint">Değişiklikler yeni oyunlarda geçerli olur; devam eden oyun kendi kurallarıyla sürer.</p>
+  ${groupSection()}
+  <p class="hint"${group.enabled ? ' style="margin-top:24px"' : ''}>Değişiklikler yeni oyunlarda geçerli olur; devam eden oyun kendi kurallarıyla sürer.</p>
   <div class="section"><h2>Puanlar (birim başına)</h2><div class="panel" style="padding:8px 14px"><div class="points-grid">
     ${HAND_TYPES.map(t => `${mcard(t.id)}<label for="pt-${t.id}">${esc(t.name)} <span style="color:var(--muted);font-size:13px">/ ${esc(t.unit)}</span></label><input class="input num" id="pt-${t.id}" type="number" inputmode="numeric" step="10" data-field="points" data-type="${t.id}" value="${Number.isFinite(s.pointsPer[t.id]) ? s.pointsPer[t.id] : ''}">`).join('')}
   </div></div></div>
@@ -743,21 +842,152 @@ views.settings = () => {
     <label class="btn btn-block" for="import-file">Yedekten geri yükle</label><input id="import-file" type="file" accept="application/json,.json" data-field="import-file" hidden>
     <button class="btn btn-danger btn-block" data-action="wipe">Tüm verileri sil</button>
   </div></div>
-  <p class="hint" style="text-align:center;margin-top:24px">King Skor ${esc(APP_VERSION)}. Veriler yalnızca bu cihazda saklanır.</p>
+  <p class="hint" style="text-align:center;margin-top:24px">King Skor ${esc(APP_VERSION)}. ${group.current()
+    ? `Veriler bu cihazda saklanır; biten oyunlar ${esc(group.current().name)} grubunun ortak kaydına da gönderilir.`
+    : 'Veriler yalnızca bu cihazda saklanır.'}</p>
 </div>`;
 };
 
+// ---------- analiz: sıralama ve kişisel karne ----------
+const pct = x => `%${Math.round(x * 100)}`;
+const fmtWhen = iso => {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? `bugün ${time}` : `${d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} ${time}`;
+};
+
+// Gruptaysa sunucudaki analizin son kopyası (internetsiz de görünür); değilse telefondaki geçmiş.
+function analysisSource() {
+  const g = group.current();
+  const cached = g ? group.cached() : null;
+  if (cached) {
+    const waiting = group.pending();
+    const note = `${g.name} grubunun ${cached.analysis.games} oyunu, ${fmtWhen(cached.at)} itibarıyla.`
+      + (waiting ? ` Bu telefondan gönderilmeyi bekleyen ${waiting} oyun henüz analizde yok.` : '');
+    return { analysis: cached.analysis, aliases: cached.aliases || {}, grouped: true, note };
+  }
+  const analysis = analyze(store.loadHistory());
+  const note = g ? 'Grubun analizi henüz gelmedi; şimdilik bu telefondaki oyunlar gösteriliyor.' : `Bu telefondaki ${analysis.games} oyun.`;
+  return { analysis, aliases: {}, grouped: false, note };
+}
+
+function joinCard() {
+  if (!group.enabled || group.current()) return '';
+  return `<div class="panel group-panel" style="margin-top:16px">
+    <p class="group-intro">Grubun bütün telefonlarındaki oyunlarla sıralama için gruba katılın. Katılınca bu telefondaki oyunlar da eklenir.</p>
+    ${joinButtons()}
+  </div>`;
+}
+
 views.stats = () => {
-  const stats = playerStats(store.loadHistory());
-  const threshold = store.loadSettings().kingThreshold;
+  const { analysis, note } = analysisSource();
+  const rows = analysis.players.map(p => {
+    const ranked = p.rank !== null;
+    const sub = ranked ? `${p.games} oyunda ${p.wins} kez çıktı` : `${p.games} oyun, sıralamaya ${MIN_RANKED_GAMES} oyunla girer`;
+    return `<button class="leader-row${p.rank === 1 ? ' first' : ''}${ranked ? '' : ' unranked'}" data-action="open-player" data-key="${esc(p.key)}">
+      <span class="rank num">${ranked ? p.rank : '–'}</span>
+      <span class="who"><span class="n">${esc(p.name)}</span><span class="s">${sub}</span></span>
+      <span class="rate num">${pct(p.winRate)}</span>
+    </button>`;
+  }).join('');
   return `<div class="screen">
-  <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>İstatistikler</h1><span></span></header>
-  ${stats.length ? `<div class="panel" style="padding:4px 10px;overflow-x:auto"><table class="table"><thead><tr><th>Oyuncu</th><th>Oyun</th><th>Galibiyet</th><th>Ortalama</th><th>En iyi</th><th>En kötü</th><th>King</th></tr></thead><tbody>
-    ${stats.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.games}</td><td class="num">${p.wins}</td><td class="num ${cls(p.avgTotal)}">${formatPoints(p.avgTotal)}</td><td class="num ${cls(p.best)}">${formatPoints(p.best)}</td><td class="num ${cls(p.worst)}">${formatPoints(p.worst)}</td><td class="num">${p.kings}</td></tr>`).join('')}
-  </tbody></table></div><p class="hint" style="margin-top:12px">Galibiyet: oyunu çıkarak ya da King yaparak bitirmek. King: koz elinde en az ${threshold} el almak.</p>`
-    : '<div class="panel empty">Biten oyun olunca oyuncu istatistikleri burada toplanır.</div>'}
+  <header class="topbar"><button class="icon-btn" data-action="go" data-view="home" aria-label="Geri">‹</button><h1>Analiz</h1><span></span></header>
+  <p class="source">${esc(note)}</p>
+  ${analysis.players.length ? `<div class="panel">${rows}</div>
+  <p class="hint" style="margin-top:12px">Kazanma yüzdesi: oyunu çıkarak ya da King yaparak bitirdiği oyunların oranı. Ceza karnesi için oyuncuya dokunun.</p>`
+    : '<div class="panel empty">Henüz biten oyun yok. İlk oyun bitince sıralama burada görünür.</div>'}
+  ${joinCard()}
 </div>`;
 };
+
+// Cezada adil paydan az almak iyi, kozda çok almak iyi. ±1,5 puan fark "dengede" sayılır.
+function shareTone(typeId, share) {
+  const d = share - FAIR_SHARE;
+  if (Math.abs(d) < 0.015) return 'even';
+  return (TYPE_BY_ID[typeId].ceza ? d > 0 : d < 0) ? 'bad' : 'good';
+}
+
+function shareRow(t, s) {
+  if (!s.hands) {
+    return `<div class="share-row none">${mcard(t.id)}<span><span class="n">${esc(t.name)}</span><span class="s">oynanmadı</span></span><span></span><span class="pct num">–</span></div>`;
+  }
+  const tone = shareTone(t.id, s.share);
+  const width = Math.min(100, (s.share / (FAIR_SHARE * 2)) * 100); // çubuğun ortası = adil pay
+  return `<div class="share-row" role="img" aria-label="${esc(t.name)}: ${s.hands} elde payı ${pct(s.share)}, adil pay %25">
+    ${mcard(t.id)}
+    <span><span class="n">${esc(t.name)}</span><span class="s">${s.hands} el</span></span>
+    <span class="bar" aria-hidden="true"><span class="fill ${tone}" style="width:${width.toFixed(1)}%"></span><span class="fair"></span></span>
+    <span class="pct num ${tone}">${pct(s.share)}</span>
+  </div>`;
+}
+
+function currentPlayer() {
+  const src = analysisSource();
+  const key = resolveAlias(state.playerKey, src.aliases);
+  const p = src.analysis.players.find(x => x.key === key) || src.analysis.players.find(x => x.keys.includes(state.playerKey));
+  return { ...src, p };
+}
+
+views.player = () => {
+  const { p, aliases, grouped, analysis } = currentPlayer();
+  if (!p) { state.view = 'stats'; return views.stats(); }
+  state.playerKey = p.key;
+  const weak = p.weakest && TYPE_BY_ID[p.weakest];
+  const strong = p.strongest && TYPE_BY_ID[p.strongest];
+  const rankLine = p.rank !== null ? `Sıralamada ${p.rank}.` : `Sıralamaya girmek için ${MIN_RANKED_GAMES - p.games} oyun daha gerekiyor.`;
+  const linked = Object.keys(aliases).filter(from => resolveAlias(from, aliases) === p.key)
+    .map(from => ({ from, label: p.spellings.filter(n => nameKey(n) === from).join(', ') || from }));
+  return `<div class="screen">
+  <header class="topbar"><button class="icon-btn" data-action="go" data-view="stats" aria-label="Sıralamaya dön">‹</button><h1>${esc(p.name)}</h1><span></span></header>
+  <div class="karne-hero"><span class="rate num">${pct(p.winRate)}</span><p>${p.games} oyunda ${p.wins} kez çıktı. ${rankLine}</p></div>
+  <div class="panel stat-grid">
+    <div><span class="v num ${cls(p.avgTotal)}">${formatPoints(p.avgTotal)}</span><span class="l">Ortalama</span></div>
+    <div><span class="v num ${cls(p.best)}">${formatPoints(p.best)}</span><span class="l">En iyi</span></div>
+    <div><span class="v num ${cls(p.worst)}">${formatPoints(p.worst)}</span><span class="l">En kötü</span></div>
+    <div><span class="v num">${p.kings}</span><span class="l">King</span></div>
+  </div>
+  ${weak ? `<p class="insight bad">En çok zorlandığı ceza <strong>${esc(weak.name)}</strong>: payı ${pct(p.types[weak.id].share)}, adil pay %25.</p>` : ''}
+  ${strong ? `<p class="insight good">En iyi olduğu ceza <strong>${esc(strong.name)}</strong>: payı ${pct(p.types[strong.id].share)}, adil pay %25.</p>` : ''}
+  <div class="section"><h2>Ceza karnesi</h2>
+    <div class="panel">${HAND_TYPES.map(t => shareRow(t, p.types[t.id])).join('')}</div>
+    <p class="hint" style="margin-top:10px">Pay: o elde dağıtılanların yüzde kaçını aldığı. Dört kişide adil pay %25, çubuktaki çizgi onu gösterir. Cezada azı, kozda çoğu iyidir.</p>
+  </div>
+  ${p.spellings.length > 1 ? `<p class="hint">Kayıtlardaki yazımlar: ${esc(p.spellings.join(', '))}</p>` : ''}
+  ${grouped && analysis.players.length > 1 ? `<div class="section"><h2>İsim birleştirme</h2>
+    ${linked.length ? `<div class="panel" style="padding:0 14px">${linked.map(l => `<div class="toggle-row"><span><span class="t">${esc(l.label)}</span><br><span class="d">bu oyuncuyla birleştirildi</span></span><button class="btn btn-ghost" data-action="player-split" data-from="${esc(l.from)}">Ayır</button></div>`).join('')}</div>` : ''}
+    <div class="stack"><button class="btn btn-block" data-action="player-merge">Başka bir isimle birleştir</button></div>
+  </div>` : ''}
+</div>`;
+};
+
+Object.assign(actions, {
+  'open-player'({ key }) { state.playerKey = key; setView('player'); },
+  async 'player-merge'() {
+    const { p, analysis } = currentPlayer();
+    if (!p) return;
+    const others = analysis.players.filter(x => x.key !== p.key).sort((a, b) => b.games - a.games || a.name.localeCompare(b.name, 'tr-TR'));
+    const i = await choose(`${p.name} başka hangi isimle kayıtlı?`, others.map(o => `${o.name} (${o.games} oyun)`));
+    if (i < 0) return;
+    const target = others[i];
+    if (!(await ask(`${p.name} ile ${target.name} aynı kişi sayılsın mı? Bütün telefonlarda tek oyuncu olarak görünür; sonra ayırabilirsiniz.`, { okLabel: 'Birleştir' }))) return;
+    const r = await group.merge(p.key, target.key);
+    if (!r.ok) return toast(r.error);
+    state.playerKey = target.key;
+    await syncSoon({ refresh: true });
+    render();
+    toast(`${p.name} ve ${target.name} birleştirildi`);
+  },
+  async 'player-split'({ from }) {
+    const { p } = currentPlayer();
+    const label = p?.spellings.filter(n => nameKey(n) === from).join(', ') || from;
+    if (!(await ask(`${label} yeniden ayrı oyuncu sayılsın mı?`, { okLabel: 'Ayır' }))) return;
+    const r = await group.split(from);
+    if (!r.ok) return toast(r.error);
+    await syncSoon({ refresh: true });
+    render();
+    toast(`${label} ayrıldı`);
+  },
+});
 
 // ---------- skor tablosu görseli ----------
 function renderScoreCanvas(g) {
@@ -911,12 +1141,77 @@ Object.assign(actions, {
   'settings-reset'() { state.settings = cloneRules(DEFAULT_RULES); render(); toast('Varsayılanlar yüklendi, kaydetmeyi unutmayın'); },
   export() { exportBackup(); },
   async wipe() {
-    if (!(await ask('Tüm oyunlar, geçmiş ve ayarlar silinsin mi? Bu işlem geri alınamaz.', { okLabel: 'Hepsini sil', danger: true }))) return;
+    const shared = group.current() ? ' Bu telefon gruptan da çıkar; grubun ortak kaydı silinmez.' : '';
+    if (!(await ask(`Tüm oyunlar, geçmiş ve ayarlar silinsin mi? Bu işlem geri alınamaz.${shared}`, { okLabel: 'Hepsini sil', danger: true }))) return;
     store.wipeAll();
+    group.leave();
     state.game = null;
     state.settings = null;
     setView('home');
     toast('Tüm veriler silindi');
+  },
+});
+
+// ---------- grup kurma, katılma, davet ----------
+let groupBusy = false; // çift dokunuş iki grup kurmasın
+async function groupTask(fn) {
+  if (groupBusy) return;
+  groupBusy = true;
+  try { await fn(); } finally { groupBusy = false; }
+}
+
+function addHistoryToGroup() {
+  for (const g of store.loadHistory().slice().reverse()) group.enqueue('put', g.id); // eskiden yeniye
+}
+
+Object.assign(actions, {
+  'invite-join'() {
+    if (!INVITE) return;
+    return groupTask(async () => {
+      toast('Gruba katılınıyor…');
+      const r = await group.lookup(INVITE.code);
+      if (!r.ok) return toast(r.error);
+      group.join(r.group);
+      addHistoryToGroup(); // davet metni oyunların ekleneceğini söyler; ikinci soru yok
+      setView('stats'); // sıralama hemen görünsün
+      syncSoon({ refresh: true });
+      toast(`${r.group.name} grubuna katıldınız`);
+    });
+  },
+  'group-join'() {
+    return groupTask(async () => {
+      const input = await askText('Grup kodunu yazın', { placeholder: 'ABCD-2345', okLabel: 'Devam', autocapitalize: 'characters', maxLength: 300 });
+      if (!input) return;
+      toast('Grup aranıyor…');
+      const r = await group.lookup(input);
+      if (!r.ok) return toast(r.error);
+      const n = store.loadHistory().length;
+      const title = `${r.group.name} grubuna katılınsın mı? Grupta şu an ${r.group.games} oyun var.`;
+      const pick = n
+        ? await choose(`${title} Bu telefondaki ${n} oyun da eklensin mi?`, ['Katıl ve oyunları ekle', 'Katıl, sadece yeni oyunlar'])
+        : ((await ask(title, { okLabel: 'Katıl' })) ? 1 : -1);
+      if (pick < 0) return;
+      group.join(r.group);
+      if (pick === 0) addHistoryToGroup();
+      syncSoon({ refresh: true });
+      render();
+      toast(`${r.group.name} grubuna katıldınız`);
+    });
+  },
+  'group-invite'() {
+    const g = group.current();
+    if (!g) return;
+    share(inviteText(g));
+  },
+  async 'group-leave'() {
+    const g = group.current();
+    if (!g) return;
+    const n = group.pending();
+    const lost = n ? ` Gönderilmeyi bekleyen ${n} oyun gönderilmeyecek.` : '';
+    if (!(await ask(`${g.name} grubundan çıkılsın mı? Bu telefondaki oyunlar ve grubun ortak kaydı silinmez.${lost}`, { okLabel: 'Gruptan çık', danger: true }))) return;
+    group.leave();
+    render();
+    toast('Gruptan çıkıldı');
   },
 });
 
@@ -931,6 +1226,13 @@ document.addEventListener('change', async e => {
   const r = store.importAll(text);
   if (!r.ok) return toast(r.error);
   state.game = store.loadCurrent();
+  // Yedekteki oyunlar gruba yalnızca onayla gider (katılırken "sadece yeni oyunlar" seçilmiş olabilir). Aynı kimlik güncellenir.
+  const g = group.current();
+  const n = store.loadHistory().length;
+  if (g && n && (await choose(`Yedekteki ${n} oyun ${g.name} grubuna da eklensin mi?`, ['Evet, gruba ekle', 'Hayır, sadece bu telefonda kalsın'])) === 0) {
+    addHistoryToGroup();
+    syncSoon();
+  }
   state.settings = null;
   setView('home');
   toast('Yedek geri yüklendi');
@@ -959,6 +1261,31 @@ if ('serviceWorker' in navigator && !window.__KING_BUNDLE__) {
     }).catch(() => {});
   });
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(state.view === 'board' && Boolean(state.game) && !state.viewGame); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  keepAwake(state.view === 'board' && Boolean(state.game) && !state.viewGame);
+  syncSoon();
+});
+window.addEventListener('online', () => syncSoon());
 if (storage.memory) toast('Tarayıcı depolamayı engelliyor: uygulama kapanınca oyun kaybolur.', { sticky: true });
 render();
+// İlk çizimden sonra: ağ cevabı beklenmez, açılışı geciktirmez.
+setTimeout(() => syncSoon(), 0);
+
+const INVITE_SNOOZE = 'king:v1:inviteSnooze';
+function maybeInvite() {
+  if (!INVITE || !group.enabled || group.current() || state.view !== 'home' || closeDialog) return;
+  if (state.game && state.game.hands.length) return; // oyun sürerken araya girme; ana ekrandaki kart yeter
+  let until = 0;
+  try { until = Number(storage.impl.getItem(INVITE_SNOOZE)) || 0; } catch { /* depolama kapalı */ }
+  if (Date.now() < until) return;
+  const n = store.loadHistory().length;
+  const text = `${INVITE.name} grubu açıldı! Bütün oyunlar tek sıralamada: kim kaç kez çıkıyor, kim hangi cezada zorlanıyor.`
+    + (n ? ` Bu telefondaki ${n} oyun da sıralamaya eklenir.` : '');
+  ask(text, { okLabel: 'Katıl', cancelLabel: 'Şimdi değil' }).then(yes => {
+    if (yes) return actions['invite-join']();
+    try { storage.impl.setItem(INVITE_SNOOZE, String(Date.now() + 3 * 24 * 3600 * 1000)); } catch { /* yok say */ }
+    return undefined;
+  });
+}
+setTimeout(maybeInvite, 600);

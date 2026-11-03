@@ -7,6 +7,8 @@
     "test": "node --test",
     "serve": "python3 -m http.server 8080",
     "bundle": "node tools/bundle.mjs",
-    "icons": "python3 tools/make-icons.py"
+    "icons": "python3 tools/make-icons.py",
+    "worker:dev": "cd worker && WRANGLER_SEND_METRICS=false npx --yes wrangler@4.151.2 d1 migrations apply king-skor --local && WRANGLER_SEND_METRICS=false npx --yes wrangler@4.151.2 dev --port 8787 --ip 127.0.0.1",
+    "worker:deploy": "node --test && cd worker && WRANGLER_SEND_METRICS=false npx --yes wrangler@4.151.2 d1 migrations apply king-skor --remote && WRANGLER_SEND_METRICS=false npx --yes wrangler@4.151.2 deploy"
   }
 }

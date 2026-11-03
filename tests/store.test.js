@@ -112,3 +112,9 @@ test('exportAll / importAll round-trip; importAll rejects invalid payload', () =
   assert.equal(s2.importAll('{"version":99}').ok, false);
   assert.equal(s2.loadCurrent().id, g.id, 'failed import leaves data untouched');
 });
+
+test('saveNames merges Turkish-letter variants and keeps the first spelling', () => {
+  const s = createStore(fakeStorage());
+  s.saveNames(['Çağrı', 'cagri', 'Işıl', 'ISIL']);
+  assert.deepEqual(s.loadNames(), ['Çağrı', 'Işıl']);
+});

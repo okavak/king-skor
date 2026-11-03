@@ -1,8 +1,11 @@
 // roster.js — kayıtlı oyuncu listesi ve koltuk seçimi için saf yardımcılar.
+import { nameKey } from './names.js';
+
 export const SEATS = 4;
 export const ROSTER_CAP = 50;
 
-export const nameKeyOf = n => String(n).trim().toLocaleLowerCase('tr-TR');
+// Türkçe karakter ve büyük/küçük harf farkı yok sayılır: "Çağrı" ile "Cagri" aynı oyuncu.
+export const nameKeyOf = nameKey;
 
 export function toggleSeat(selected, name, max = SEATS) {
   const key = nameKeyOf(name);

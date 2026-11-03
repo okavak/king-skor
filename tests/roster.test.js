@@ -35,3 +35,11 @@ test('removeFromRoster drops by key only', () => {
 test('ensureInRoster appends missing names in order and keeps existing', () => {
   assert.deepEqual(ensureInRoster(['Ozan'], ['Alper', 'ozan', 'Yasin']), ['Ozan', 'Alper', 'Yasin']);
 });
+
+test('roster treats Turkish-letter and case variants as the same player', () => {
+  const dup = addToRoster(['Çağrı'], 'Cagri');
+  assert.equal(dup.added, false);
+  assert.match(dup.error, /zaten/);
+  assert.deepEqual(toggleSeat(['Çağrı'], 'cagri'), []);
+  assert.equal(seatOf(['Ali', 'Işıl'], 'ISIL'), 2);
+});

@@ -1,0 +1,16 @@
+// King Skor ortak grup kaydı. Kişisel Cloudflare hesabı (Airox Labs hesabı değil). Kurulum: README "Grup sunucusu".
+{
+  "name": "king-skor",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "account_id": "30ad4f16906da4cc7c23c38eb8a32404",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "king-skor",
+      "database_id": "6ee401f4-003e-4e91-a020-63af0803edaa",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
