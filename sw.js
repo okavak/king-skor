@@ -1,5 +1,5 @@
 // sw.js — uygulama kabuğunu kurulumda önbelleğe alır; önbellek-önce. Çalışma zamanında önbelleğe yazılmaz.
-const VERSION = '2026.11.03-1506';
+const VERSION = '2026.11.03-1937';
 const CACHE = `king-skor-${VERSION}`;
 // Açılışta yüklenen her yerel dosya burada olmalı; eksik modül internetsiz açılışı boş ekranda bırakır.
 // tests/sw.test.js import zincirini tarayıp bu listeyi denetler (deploy.sh testleri yayından önce çalıştırır).
