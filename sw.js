@@ -1,8 +1,10 @@
-// sw.js — uygulama kabuğunu önbelleğe alır; önbellek-önce, arka planda yenile.
+// sw.js — uygulama kabuğunu kurulumda önbelleğe alır; önbellek-önce. Çalışma zamanında önbelleğe yazılmaz.
 const VERSION = '2026.10.17-2334';
 const CACHE = `king-skor-${VERSION}`;
+// Açılışta yüklenen her yerel dosya burada olmalı; eksik modül internetsiz açılışı boş ekranda bırakır.
+// tests/sw.test.js import zincirini tarayıp bu listeyi denetler (deploy.sh testleri yayından önce çalıştırır).
 const ASSETS = [
-  './', './index.html', './app.css', './app.js', './rules.js', './store.js', './version.js',
+  './', './index.html', './app.css', './app.js', './rules.js', './store.js', './roster.js', './version.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
   './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
 ];
