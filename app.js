@@ -1,9 +1,9 @@
 // app.js — King Skor arayüzü. Görünümler şablon dizgisi üretir; olaylar data-action ile delege edilir.
 import {
   HAND_TYPES, TYPE_BY_ID, SUITS, PLAYER_COUNT, DEFAULT_RULES, cloneRules, handsTotal, createGame, makeHand,
-  handScores, validateCounts, formatPoints, dealerForHand, currentDealer, gameTotals, quotaState, availableTypes,
+  handScores, validateCounts, formatPoints, callerForHand, currentCaller, currentDealer, callerAfter, gameTotals, quotaState, availableTypes,
   isFinished, withHand, withHandReplaced, withoutHand, standings, summaryText, speechText, expectedGameTotal,
-  kingSeat, outcomes, withFirstDealer,
+  kingSeat, outcomes, withCurrentDealer, kozNeeded,
 } from './rules.js';
 import { createStore } from './store.js';
 import { analyze, MIN_RANKED_GAMES, FAIR_SHARE } from './analysis.js';
@@ -43,7 +43,7 @@ const state = {
   boardMode: 'simple',        // simple | detail
   sheet: null,                // { step: 'type'|'counts', type, counts, trumpSuit, editIndex }
   menuOpen: false,
-  draft: { selected: [], firstDealer: 0, adding: false, newName: '', editing: false },
+  draft: { selected: [], dealer: 0, adding: false, newName: '', editing: false }, // dealer: ilk eli dağıtan koltuk
   settings: null,             // ayarlar ekranı taslağı
   lastTotals: null,           // { id, totals } — kaydedilen elde değişen puanları vurgulamak için
   imageUrl: null,             // paylaşım görseli önizlemesi (object URL)
@@ -63,6 +63,8 @@ const activeGame = () => state.viewGame || state.game;
 const isStandalone = () => Boolean(window.matchMedia?.('(display-mode: standalone)')?.matches || navigator.standalone === true);
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
+// Sıra satırı: dağıtan ve bir sonraki koltuktaki söyleyen. "Ali dağıtıyor, Veli söylüyor"
+const turnLine = (players, dealer, deals = 'dağıtıyor', calls = 'söylüyor') => `${players[dealer]} ${deals}, ${players[callerAfter(dealer)]} ${calls}`;
 const joinTr = list => (list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} ve ${list[list.length - 1]}`);
 const outcomeTag = kind => (kind === 'king' ? '<span class="tag king">King</span>' : kind === 'out' ? '<span class="tag out">Çıktı</span>' : '<span class="tag sunk">Battı</span>');
 const crownSvg = () => '<svg class="crown" viewBox="0 0 64 50" aria-hidden="true"><path d="M5 38 8 13l14 12L32 5l10 20 14-12 3 25Z"/><rect x="6" y="40" width="52" height="7" rx="2.5"/></svg>';
@@ -278,7 +280,7 @@ views.home = () => {
   return `<div class="screen">
   <header class="topbar"><h1 class="brand">King Skor</h1><button class="icon-btn" data-action="go" data-view="settings" aria-label="Ayarlar">⚙︎</button></header>
   ${g ? `<button class="panel continue" data-action="continue">
-    <span><span class="title">${esc(g.players.join(', '))}</span><span class="sub">${g.hands.length}/${handsTotal(g.rules)} el oynandı, ${esc(g.players[currentDealer(g)])} konuşuyor</span></span>
+    <span><span class="title">${esc(g.players.join(', '))}</span><span class="sub">${g.hands.length}/${handsTotal(g.rules)} el oynandı, ${esc(g.players[currentCaller(g)])} söylüyor</span></span>
     <span class="btn btn-primary" aria-hidden="true">Devam et</span></button>` : ''}
   <button class="btn ${g ? '' : 'btn-primary'} btn-block" data-action="new-game">Yeni oyun</button>
   ${inviteCard()}
@@ -309,7 +311,7 @@ views.new = () => {
     ? `<form class="roster-add" data-form="roster-add"><input class="input" id="new-name" data-field="new-name" value="${esc(d.newName)}" placeholder="İsim" autocomplete="off" autocapitalize="words" enterkeyhint="done" aria-label="Yeni oyuncu adı"><button class="btn btn-primary" type="submit">Ekle</button></form>`
     : `<button class="roster-row roster-pick add" data-action="roster-add-open"><span class="roster-name">Yeni oyuncu ekle</span><span class="seat plus" aria-hidden="true">+</span></button>`;
   const dealerPick = full ? `<div class="section"><h2>İlk dağıtan</h2>
-    <div class="dealer-pick">${d.selected.map((n, i) => `<button data-action="pick-dealer" data-index="${i}" aria-pressed="${d.firstDealer === i}">${esc(n)}</button>`).join('')}</div>
+    <div class="dealer-pick">${d.selected.map((n, i) => `<button data-action="pick-dealer" data-index="${i}" aria-pressed="${d.dealer === i}">${esc(n)}</button>`).join('')}</div>
     <div class="stack" style="margin-top:10px"><button class="btn btn-ghost" data-action="random-dealer">Rastgele seç</button></div>
     <p class="hint" style="margin-top:12px">Hatırlatma: ilk eli karo ikilisi olan oyuncu başlatır.</p>
   </div>` : '';
@@ -319,7 +321,7 @@ views.new = () => {
   <div class="panel roster">${rows}${addRow}</div>
   ${dealerPick}
 </div>
-<div class="bottom-bar"><div class="inner"><button class="btn btn-primary btn-block" data-action="start-game"${full ? '' : ' disabled'}>Oyunu başlat</button><span class="who">${full ? `${esc(d.selected[d.firstDealer])} dağıtacak` : `${d.selected.length}/4 oyuncu seçildi`}</span></div></div>`;
+<div class="bottom-bar"><div class="inner"><button class="btn btn-primary btn-block" data-action="start-game"${full ? '' : ' disabled'}>Oyunu başlat</button><span class="who">${full ? esc(turnLine(d.selected, d.dealer, 'dağıtacak', 'söyleyecek')) : `${d.selected.length}/4 oyuncu seçildi`}</span></div></div>`;
 };
 
 // ---------- eylemler (ana ekran, yeni oyun) ----------
@@ -338,13 +340,14 @@ Object.assign(actions, {
       const grown = ensureInRoster(roster, last.players);
       if (grown !== roster) store.saveNames(grown);
     }
-    state.draft = { selected: last ? [...last.players] : [], firstDealer: last ? (last.firstDealer + 1) % PLAYER_COUNT : 0, adding: false, newName: '', editing: false };
+    // İlk dağıtan her oyunda bir koltuk ilerler: geçen oyunun ilk elini söyleyen, bu oyunda ilk eli dağıtır.
+    state.draft = { selected: last ? [...last.players] : [], dealer: last ? callerForHand(last, 0) : 0, adding: false, newName: '', editing: false };
     setView('new');
   },
   'seat-toggle'({ name }) {
     const d = state.draft;
     d.selected = toggleSeat(d.selected, name);
-    if (d.firstDealer >= d.selected.length) d.firstDealer = 0;
+    if (d.dealer >= d.selected.length) d.dealer = 0;
     render();
   },
   'roster-add-open'() {
@@ -366,15 +369,15 @@ Object.assign(actions, {
   'roster-remove'({ name }) {
     store.saveNames(removeFromRoster(store.loadNames(), name));
     state.draft.selected = state.draft.selected.filter(x => nameKeyOf(x) !== nameKeyOf(name));
-    if (state.draft.firstDealer >= state.draft.selected.length) state.draft.firstDealer = 0;
+    if (state.draft.dealer >= state.draft.selected.length) state.draft.dealer = 0;
     render();
   },
   'roster-edit-toggle'() { state.draft.editing = !state.draft.editing; state.draft.adding = false; render(); },
-  'pick-dealer'({ index }) { state.draft.firstDealer = Number(index); render(); },
+  'pick-dealer'({ index }) { state.draft.dealer = Number(index); render(); },
   'random-dealer'() {
-    state.draft.firstDealer = Math.floor(Math.random() * PLAYER_COUNT);
+    state.draft.dealer = Math.floor(Math.random() * PLAYER_COUNT);
     render();
-    toast(`${state.draft.selected[state.draft.firstDealer]} dağıtacak`);
+    toast(turnLine(state.draft.selected, state.draft.dealer, 'dağıtacak', 'söyleyecek'));
   },
   async 'start-game'() {
     const d = state.draft;
@@ -382,7 +385,8 @@ Object.assign(actions, {
     const current = state.game;
     if (current && current.hands.length > 0 && !(await ask('Devam eden bir oyun var. Onu bitmiş sayıp geçmişe kaldıralım mı?', { okLabel: 'Geçmişe kaldır' }))) return;
     if (current) { if (current.hands.length > 0) archive(current); else store.clearCurrent(); }
-    state.game = createGame({ players: d.selected, firstDealer: d.firstDealer, rules: store.loadSettings() });
+    // Kayıtta firstDealer ilk eli söyleyen koltuktur (rules.js): seçilen dağıtanın bir sonraki koltuğu.
+    state.game = createGame({ players: d.selected, firstDealer: callerAfter(d.dealer), rules: store.loadSettings() });
     store.saveNames(ensureInRoster(store.loadNames(), d.selected));
     persist();
     state.boardMode = 'simple';
@@ -442,8 +446,10 @@ views.board = () => {
   const readOnly = Boolean(state.viewGame);
   const done = Boolean(g.finishedAt) || isFinished(g);
   const totals = gameTotals(g);
-  const dealer = currentDealer(g);
+  const caller = currentCaller(g); // sıradaki eli söyleyen (hakkı kullanılacak olan)
+  const dealer = currentDealer(g); // kartı dağıtan: bir önceki eli söyleyen
   const q = quotaState(g);
+  const need = kozNeeded(g); // çıkmak için gereken koz eli; yazılacak bir şey yoksa 0
   const king = kingSeat(g);
   const prev = state.lastTotals && state.lastTotals.id === g.id ? state.lastTotals.totals : null;
   const changed = i => Boolean(prev && prev[i] !== totals[i]);
@@ -454,10 +460,10 @@ views.board = () => {
   const leader = Math.max(...totals);
 
   const simple = `<div class="panel players">${g.players.map((name, i) => `
-    <div class="player-row${!done && i === dealer ? ' dealer' : ''}">
+    <div class="player-row${!done && i === caller ? ' caller' : ''}">
       ${rights(g, i)}
-      <span><span class="player-name">${esc(name)}</span>${!done && i === dealer ? '<span class="player-sub">dağıtıyor</span>' : ''}</span>
-      <span class="total num ${cls(totals[i])}${changed(i) ? ' pulse' : ''}"${g.hands.length && totals[i] === leader ? ' style="font-weight:800"' : ''}>${formatPoints(totals[i])}</span>
+      <span class="who"><span class="player-name">${esc(name)}</span>${done ? '' : i === caller ? '<span class="player-sub">söylüyor</span>' : i === dealer ? '<span class="player-sub">dağıtıyor</span>' : ''}</span>
+      <span class="score"><span class="total num ${cls(totals[i])}${changed(i) ? ' pulse' : ''}"${g.hands.length && totals[i] === leader ? ' style="font-weight:800"' : ''}>${formatPoints(totals[i])}</span>${need[i] ? `<span class="total-sub">${need[i]} kozla çıkar</span>` : ''}</span>
     </div>`).join('')}</div>
     ${g.hands.length ? lastHandLine(g, readOnly) : '<p class="hint" style="text-align:center;margin-top:14px">Henüz el oynanmadı.</p>'}`;
 
@@ -467,15 +473,17 @@ views.board = () => {
     const attrs = readOnly ? '' : ` role="button" tabindex="0" data-action="edit-hand" data-index="${idx}" aria-label="${idx + 1}. eli düzenle"`;
     return `<div style="display:contents"${attrs}>
       <span class="cell label">${mcard(h.type, 'sm')}<span>${idx + 1}. ${esc(t.short)}${h.trumpSuit ? ` ${SUITS[h.trumpSuit]}` : ''}</span></span>
-      ${sc.map((s, i) => `<span class="cell num ${cls(s)}${i === h.dealer ? ' dealer' : ''}">${s === 0 ? '–' : formatPoints(s)}</span>`).join('')}
+      ${sc.map((s, i) => `<span class="cell num ${cls(s)}${i === h.dealer ? ' caller' : ''}">${s === 0 ? '–' : formatPoints(s)}</span>`).join('')}
     </div>`;
   }).join('');
+  const needRow = need.some(Boolean)
+    ? `<span class="cell label need">Çıkmak için</span>${need.map(n => `<span class="cell need">${n ? `${n} koz` : '–'}</span>`).join('')}` : '';
   const detail = `<div class="panel">
     <div class="grid">
       <span class="cell head"></span>${g.players.map(n => `<span class="cell head" title="${esc(n)}">${esc(n)}</span>`).join('')}
       ${rows || '<span class="cell label" style="grid-column:1/-1;justify-content:center;color:var(--muted)">Henüz el oynanmadı</span>'}
     </div>
-    <div class="grid totals"><span class="cell label">Toplam</span>${totals.map(t => `<span class="cell num ${cls(t)}">${formatPoints(t)}</span>`).join('')}</div>
+    <div class="grid totals"><span class="cell label">Toplam</span>${totals.map(t => `<span class="cell num ${cls(t)}">${formatPoints(t)}</span>`).join('')}${needRow}</div>
   </div>`;
 
   const leftTypes = HAND_TYPES.filter(t => q.typeLeft[t.id] > 0);
@@ -503,7 +511,7 @@ views.board = () => {
   ${state.boardMode === 'simple' ? simple : detail}
   ${remaining}
 </div>
-${!readOnly && !done ? `<div class="bottom-bar"><div class="inner"><button class="btn btn-primary btn-block" data-action="open-sheet">El ekle</button><span class="who">${esc(g.players[dealer])} konuşuyor</span></div></div>` : ''}`;
+${!readOnly && !done ? `<div class="bottom-bar"><div class="inner"><button class="btn btn-primary btn-block" data-action="open-sheet">El ekle</button><span class="who">${esc(turnLine(g.players, dealer))}</span></div></div>` : ''}`;
 };
 
 // ---------- El Ekle paneli ----------
@@ -512,14 +520,14 @@ function sheetParts() {
   const g = state.game;
   const editing = sh.editIndex !== null;
   const handIndex = editing ? sh.editIndex : g.hands.length;
-  const dealer = dealerForHand(g, handIndex);
+  const caller = callerForHand(g, handIndex);
   const q = quotaState(editing ? withoutHand(g, sh.editIndex) : g);
-  const who = `${esc(g.players[dealer])} konuşuyor`;
-  const rightsLine = g.rules.enforceQuotas ? `kalan hakkı ${q.cezaLeft[dealer]} ceza, ${q.kozLeft[dealer]} koz` : 'haklar serbest';
+  const who = `${esc(g.players[caller])} söylüyor`;
+  const rightsLine = g.rules.enforceQuotas ? `kalan hakkı ${q.cezaLeft[caller]} ceza, ${q.kozLeft[caller]} koz` : 'haklar serbest';
   let title, body, foot, back = false;
 
   if (sh.step === 'type') {
-    const list = availableTypes(g, dealer, { handIndex, excludeIndex: editing ? sh.editIndex : null });
+    const list = availableTypes(g, caller, { handIndex, excludeIndex: editing ? sh.editIndex : null });
     const open = list.filter(a => a.enabled); // seçilemeyen türler listede görünmez (sadeleştirme)
     title = editing ? `${handIndex + 1}. eli düzenle` : `${handIndex + 1}. el`;
     body = open.length ? `<div class="type-list">${open.map(a => {
@@ -543,7 +551,7 @@ function sheetParts() {
       ? `<p class="hint" style="text-align:center;margin-top:12px">Rıfkıyı (kupa papazı) kim aldı?</p><div class="pick-grid">${g.players.map((n, i) =>
           `<button data-action="pick-rifki" data-index="${i}" aria-pressed="${sh.counts[i] === 1}">${esc(n)}</button>`).join('')}</div>`
       : g.players.map((n, i) => `<div class="count-row">
-          <span class="who"><span class="n">${esc(n)}${i === dealer ? ' <span style="color:var(--muted);font-weight:400;font-size:13px">dağıtan</span>' : ''}</span>
+          <span class="who"><span class="n">${esc(n)}${i === caller ? ' <span style="color:var(--muted);font-weight:400;font-size:13px">söyleyen</span>' : ''}</span>
             <span class="pts num ${cls(sh.counts[i] * per)}">${sh.counts[i] ? formatPoints(sh.counts[i] * per) : '–'}</span>
             <button class="fill-btn" data-action="fill" data-index="${i}"${remaining > 0 ? '' : ' style="visibility:hidden" tabindex="-1"'}>Kalanı ver (+${Math.max(remaining, 0)})</button></span>
           <span class="stepper"><button data-action="dec" data-index="${i}" aria-label="${esc(n)} azalt"${sh.counts[i] <= 0 ? ' disabled' : ''}>−</button><button class="val num" data-action="pick-count" data-index="${i}" aria-label="${esc(n)} için sayı seç" aria-expanded="${sh.pickFor === i}">${sh.counts[i]}</button><button data-action="inc" data-index="${i}" aria-label="${esc(n)} artır"${remaining <= 0 ? ' disabled' : ''}>+</button></span>
@@ -681,12 +689,11 @@ Object.assign(actions, {
     const g = state.game;
     const seat = await choose('Şu an kim dağıtıyor?', g.players);
     if (seat < 0) return;
-    const firstDealer = ((seat - g.hands.length) % PLAYER_COUNT + PLAYER_COUNT) % PLAYER_COUNT;
-    if (firstDealer === g.firstDealer) return toast('Dağıtan sırası zaten böyle');
-    state.game = withFirstDealer(g, firstDealer);
+    if (seat === currentDealer(g)) return toast('Sıra zaten böyle');
+    state.game = withCurrentDealer(g, seat);
     persist();
     render();
-    toast(`Dağıtan sırası düzeltildi: ${g.players[seat]} dağıtıyor`);
+    toast(`Sıra düzeltildi: ${turnLine(g.players, seat)}`);
   },
   'pick-rifki'({ index }) { state.sheet.counts = state.sheet.counts.map((_, i) => (i === Number(index) ? 1 : 0)); renderSheet(); },
   'pick-suit'({ suit }) { state.sheet.trumpSuit = state.sheet.trumpSuit === suit ? null : suit; renderSheet(); },
@@ -698,7 +705,7 @@ Object.assign(actions, {
     if (!v.ok) return toast(v.error);
     const editing = sh.editIndex !== null;
     const handIndex = editing ? sh.editIndex : g.hands.length;
-    const hand = makeHand(sh.type, dealerForHand(g, handIndex), sh.counts, sh.trumpSuit);
+    const hand = makeHand(sh.type, callerForHand(g, handIndex), sh.counts, sh.trumpSuit);
     const next = editing ? withHandReplaced(g, sh.editIndex, hand) : withHand(g, hand);
     state.game = next;
     state.sheet = null;
@@ -775,7 +782,7 @@ Object.assign(actions, {
   },
   rematch() {
     const g = state.finishedGame;
-    state.draft = { selected: [...g.players], firstDealer: (g.firstDealer + 1) % PLAYER_COUNT, adding: false, newName: '', editing: false };
+    state.draft = { selected: [...g.players], dealer: callerForHand(g, 0), adding: false, newName: '', editing: false };
     setView('new');
   },
   'reopen-last'() {
@@ -943,7 +950,7 @@ function trendSection(p) {
   return `<div class="section"><h2>Gidişat</h2><p class="insight ${tone}" style="margin-top:0"><strong>${word}.</strong> Son 5 oyunda ${p.recent.wins} kez çıktı (${pct(p.recent.winRate)}), genelde ${pct(p.winRate)}.</p></div>`;
 }
 
-// Dağıtan oynanacak eli seçer: kendi seçtiği ellerdeki payı, başkalarının seçtiklerine göre.
+// Eli söyleyen oynanacak eli seçer: kendi seçtiği ellerdeki payı, başkalarının seçtiklerine göre.
 function choiceSection(p) {
   const c = p.choice;
   if (!c.ceza.own.hands && !c.koz.own.hands) return '';
@@ -961,7 +968,7 @@ function choiceSection(p) {
   else if (dk < -0.03) notes.push('Kendi seçtiği kozda başkalarınınkinden az el alıyor.');
   return `<div class="section"><h2>Kendi seçtiği eller</h2>
     <div class="panel">${row('Kendi seçtiği cezalar', 'el', c.ceza.own)}${row('Başkalarının seçtiği cezalar', 'el', c.ceza.other)}${row('Kendi seçtiği kozlar', 'koz', c.koz.own)}${row('Başkalarının seçtiği kozlar', 'koz', c.koz.other)}</div>
-    <p class="hint" style="margin-top:10px">${notes.length ? `${notes.join(' ')} ` : ''}Dağıtan, oynanacak eli kendisi seçer.</p>
+    <p class="hint" style="margin-top:10px">${notes.length ? `${notes.join(' ')} ` : ''}Eli söyleyen, oynanacak eli kendisi seçer.</p>
   </div>`;
 }
 

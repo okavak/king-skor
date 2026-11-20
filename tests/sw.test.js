@@ -58,3 +58,20 @@ test('every precached path exists, so the service worker install cannot fail', (
   const absent = precacheList().filter(p => !existsSync(new URL(p, root))).sort();
   assert.deepEqual(absent, [], `listed in sw.js ASSETS but not on disk: ${absent.join(', ')}`);
 });
+
+test('every name a startup module imports is really exported by the module it comes from', async () => {
+  // Olmayan bir adı içe aktaran modül hiç yüklenmez: app.js çalışmaz → boş ekran. app.js DOM istediği için
+  // testlerde yüklenmez; bir dışa aktarımın adı değişip app.js'de eski adı kalırsa bunu yalnızca bu test görür.
+  const NAMED_IMPORT = /^\s*import\s*\{([^}]*)\}\s*from\s*['"](\.{1,2}\/[^'"]+)['"]/gm;
+  const broken = [];
+  for (const file of [...startupFiles()].filter(f => f.endsWith('.js'))) {
+    const url = new URL(file, root);
+    for (const [, names, spec] of read(url).matchAll(NAMED_IMPORT)) {
+      const exported = await import(new URL(spec, url));
+      for (const name of names.split(',').map(n => n.trim().split(/\s+as\s+/)[0]).filter(Boolean)) {
+        if (!(name in exported)) broken.push(`${file} imports ${name} from ${spec}`);
+      }
+    }
+  }
+  assert.deepEqual(broken, []);
+});

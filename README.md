@@ -14,9 +14,11 @@ Android: Chrome menüsü → "Ana ekrana ekle" / "Uygulamayı yükle".
 ## Kullanım
 
 - **Yeni oyun**: listeden dört oyuncuya oturma sırasıyla dokunun (1–4 rozetleri koltuk sırası), gerekirse
-  "Yeni oyuncu ekle"; ilk dağıtanı seçin.
-- **El ekle**: dağıtan otomatik gelir; listede yalnızca seçilebilecek türler görünür (her ceza en fazla
+  "Yeni oyuncu ekle"; ilk dağıtanı seçin (bir sonraki oyuncu söyler).
+- **El ekle**: eli söyleyen otomatik gelir (bir eli söyleyen, sonraki eli dağıtır; ondan sonraki söyler); listede yalnızca seçilebilecek türler görünür (her ceza en fazla
   2 kez, oyuncu başına 3 ceza + 2 koz). Sayıları −/+ ile girin, "Kalanı ver" ile tamamlayın.
+- **Kaç kozla çıkar**: ekside olan oyuncunun puanının altında, çıkmak için kaç koz eli alması gerektiği yazar
+  ("5 kozla çıkar"); Detaylı görünümde Toplam satırının altındaki "Çıkmak için" satırında durur.
 - **Oyun bitti**: sonucu paylaşın, aynı oyuncularla yeni oyun açın ya da "Son eli düzelt" ile son eli değiştirin.
 - **Yanlış kaydı düzeltme**: kaydettikten hemen sonra bildirimdeki "Geri al"; Basit görünümde "Düzenle";
   Detaylı görünümde satıra dokunun; sayı girerken değere dokununca 0–13 hızlı seçim şeridi açılır; menüde
@@ -43,7 +45,7 @@ Android: Chrome menüsü → "Ana ekrana ekle" / "Uygulamayı yükle".
   - Bir oyuncuya dokununca ceza karnesi açılır. Her ceza ve kozda oyuncunun payı adil paya (%25) göre gösterilir;
     en çok zorlandığı ve en iyi olduğu ceza ayrıca belirtilir.
 - **Karne:** Kazanma yüzdesi, ceza karnesi ve en çok zorlandığı ceza gösterilir. **Gidişat** son 5 oyunu genelle karşılaştırır
-  ve 6. oyundan sonra görünür. **Kendi seçtiği eller** dağıtırken seçtiği ellerdeki payı başkalarının seçtiklerindekiyle
+  ve 6. oyundan sonra görünür. **Kendi seçtiği eller** kendi söylediği ellerdeki payı başkalarının seçtiklerindekiyle
   karşılaştırır.
 - **Resmi liste ve isimler:**
   - Grubun oyuncu listesini yönetici belirler. Sıralamada bu yazımlar görünür; oyunu olmayanlar en altta "Henüz oyun yok"

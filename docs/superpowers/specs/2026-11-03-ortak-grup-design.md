@@ -215,7 +215,7 @@ Ertelenen küçük konular (bağımsız incelemeden):
   - Telefonların kendi oyuncu listeleri gruba gönderilmez (kullanıcı kararı).
 - **Karne eklemeleri (kullanıcı seçti):**
   - **Gidişat:** son 5 oyunun kazanma yüzdesi, genel yüzdeye göre. 6. oyundan sonra görünür; ±5 puan "aynı çizgide" sayılır.
-  - **Kendi seçtiği eller:** dağıtırken seçtiği ceza ve koz ellerindeki ortalama payı, başkalarının seçtiklerindekiyle
+  - **Kendi seçtiği eller:** kendi söylediği (seçtiği) ceza ve koz ellerindeki ortalama payı, başkalarının seçtiklerindekiyle
     karşılaştırır.
   - Kullanıcı "neyin kaç puana mal olduğu" ve "az veriyle yorum uyarısı" önerilerini istemedi.
 - **Özet şeması 2:** Koltuk başına `ch` ve `kh` dizileri tutulur: kendi seçtiği / başkasının seçtiği el sayısı ve pay toplamı.

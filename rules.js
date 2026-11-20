@@ -51,8 +51,15 @@ export function createGame({ players, firstDealer = 0, rules = DEFAULT_RULES, no
   };
 }
 
-export function makeHand(type, dealer, counts, trumpSuit = null) {
-  const hand = { type, dealer, counts: [...counts] };
+// Sıra: eli söyleyen (oynanacak eli seçen) koltuk her el bir ilerler. Kartı, bir önceki eli söyleyen dağıtır;
+// yani dağıtan her zaman söyleyenden bir önceki koltuktur.
+// Kayıtlı veride `game.firstDealer` ve `hand.dealer` alanları SÖYLEYEN koltuğu tutar. Adlar eski kayıtlar,
+// yedekler ve ortak grup kaydıyla uyum için değişmedi.
+export const callerAfter = dealer => (dealer + 1) % PLAYER_COUNT;
+export const dealerBefore = caller => (caller + PLAYER_COUNT - 1) % PLAYER_COUNT;
+
+export function makeHand(type, caller, counts, trumpSuit = null) {
+  const hand = { type, dealer: caller, counts: [...counts] };
   if (type === 'koz' && trumpSuit) hand.trumpSuit = trumpSuit;
   return hand;
 }
@@ -82,12 +89,17 @@ export function formatPoints(n) {
   return String(n);
 }
 
-export function dealerForHand(game, index) {
+export function callerForHand(game, index) {
   return (game.firstDealer + index) % PLAYER_COUNT;
 }
 
+export function currentCaller(game) {
+  return callerForHand(game, game.hands.length);
+}
+
+// Sıradaki elin kartını dağıtan: bir önceki eli söyleyen.
 export function currentDealer(game) {
-  return dealerForHand(game, game.hands.length);
+  return dealerBefore(currentCaller(game));
 }
 
 export function withHand(game, hand) {
@@ -101,15 +113,17 @@ export function withHandReplaced(game, index, hand) {
 }
 
 export function withoutHand(game, index) {
-  // Dağıtan sırası indeksten türetilir; silmeden sonra kalan eller yeniden damgalanır.
-  const hands = game.hands.filter((_, i) => i !== index).map((h, i) => ({ ...h, dealer: dealerForHand(game, i) }));
+  // Söyleyen sırası indeksten türetilir; silmeden sonra kalan eller yeniden damgalanır.
+  const hands = game.hands.filter((_, i) => i !== index).map((h, i) => ({ ...h, dealer: callerForHand(game, i) }));
   return { ...game, hands };
 }
 
-// İlk dağıtanı değiştirir ve tüm ellerin dağıtanını yeniden damgalar (oyun ortası düzeltme).
-export function withFirstDealer(game, firstDealer) {
+// Oyun ortası sıra düzeltme: sıradaki eli `dealer` koltuğu dağıtır, bir sonraki koltuk söyler.
+// Oynanmış ellerin söyleyeni buna göre yeniden damgalanır.
+export function withCurrentDealer(game, dealer) {
+  const firstDealer = ((callerAfter(dealer) - game.hands.length) % PLAYER_COUNT + PLAYER_COUNT) % PLAYER_COUNT;
   const next = { ...game, firstDealer };
-  next.hands = game.hands.map((h, i) => ({ ...h, dealer: dealerForHand(next, i) }));
+  next.hands = game.hands.map((h, i) => ({ ...h, dealer: callerForHand(next, i) }));
   return next;
 }
 
@@ -134,11 +148,11 @@ export function quotaState(game) {
   return { cezaLeft, kozLeft, typeLeft, handsLeft: handsTotal(r) - game.hands.length };
 }
 
-export function availableTypes(game, dealer, { handIndex = game.hands.length, excludeIndex = null } = {}) {
+export function availableTypes(game, caller, { handIndex = game.hands.length, excludeIndex = null } = {}) {
   const base = excludeIndex === null ? game : withoutHand(game, excludeIndex);
   const r = game.rules;
   const q = quotaState(base);
-  const name = game.players[dealer];
+  const name = game.players[caller];
   return HAND_TYPES.map(t => {
     const left = q.typeLeft[t.id];
     const ok = { type: t.id, enabled: true, reason: '', left };
@@ -146,8 +160,8 @@ export function availableTypes(game, dealer, { handIndex = game.hands.length, ex
     if (!r.enforceQuotas) return ok;
     if (t.ceza) {
       if (left <= 0) return { ...ok, enabled: false, reason: `${t.name} ${r.maxPerCezaType} kez oynandı` };
-      if (q.cezaLeft[dealer] <= 0) return { ...ok, enabled: false, reason: `${name} için ceza hakkı kalmadı` };
-    } else if (q.kozLeft[dealer] <= 0) {
+      if (q.cezaLeft[caller] <= 0) return { ...ok, enabled: false, reason: `${name} için ceza hakkı kalmadı` };
+    } else if (q.kozLeft[caller] <= 0) {
       return { ...ok, enabled: false, reason: `${name} için koz hakkı kalmadı` };
     }
     return ok;
@@ -177,6 +191,15 @@ export function outcomes(game) {
   const k = kingSeat(game);
   if (k) return { king: k.seat, bySeat: game.players.map((_, i) => (i === k.seat ? 'king' : 'sunk')) };
   return { king: null, bySeat: gameTotals(game).map(t => (t >= 0 ? 'out' : 'sunk')) };
+}
+
+// Çıkmak (toplamı 0'a ya da üstüne getirmek) için koltuk başına alınması gereken koz eli sayısı, yukarı yuvarlanır.
+// Yazılacak bir şey yoksa 0: oyuncu ekside değil, oyun bitti ya da oynanacak koz eli kalmadı.
+export function kozNeeded(game) {
+  const per = game.rules.pointsPer.koz;
+  const kozOpen = !game.rules.enforceQuotas || quotaState(game).typeLeft.koz > 0;
+  if (!(per > 0) || !kozOpen || game.finishedAt || isFinished(game)) return new Array(PLAYER_COUNT).fill(0);
+  return gameTotals(game).map(t => (t < 0 ? Math.ceil(-t / per) : 0));
 }
 
 export function standings(game) {

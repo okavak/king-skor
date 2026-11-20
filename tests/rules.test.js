@@ -65,20 +65,21 @@ test('formatPoints shows sign only for negatives and dash for zero', () => {
 
 // ---- Task 2: rotasyon, kota, uygunluk ----
 import {
-  dealerForHand, currentDealer, gameTotals, quotaState, availableTypes, isFinished,
+  callerForHand, currentCaller, gameTotals, quotaState, availableTypes, isFinished,
   withHand, withHandReplaced, withoutHand,
 } from '../rules.js';
 
 function enabledIds(list) { return list.filter(x => x.enabled).map(x => x.type); }
 
-test('dealer rotates clockwise from firstDealer', () => {
+// Kayıtta firstDealer ve hand.dealer eli söyleyen koltuğu tutar (rules.js'teki not).
+test('the caller rotates clockwise from firstDealer', () => {
   const g = createGame({ players, firstDealer: 3 });
-  assert.equal(dealerForHand(g, 0), 3);
-  assert.equal(dealerForHand(g, 1), 0);
-  assert.equal(dealerForHand(g, 4), 3);
-  assert.equal(currentDealer(g), 3);
+  assert.equal(callerForHand(g, 0), 3);
+  assert.equal(callerForHand(g, 1), 0);
+  assert.equal(callerForHand(g, 4), 3);
+  assert.equal(currentCaller(g), 3);
   const g2 = withHand(g, makeHand('el', 3, [13, 0, 0, 0]));
-  assert.equal(currentDealer(g2), 0);
+  assert.equal(currentCaller(g2), 0);
   assert.equal(g.hands.length, 0, 'withHand is immutable');
 });
 
@@ -243,14 +244,14 @@ test('isValidGame accepts real games and rejects junk', () => {
 });
 
 // ---- İnceleme düzeltmeleri ----
-test('withoutHand re-stamps dealers so hands[i].dealer === dealerForHand(g, i)', () => {
+test('withoutHand re-stamps callers so hands[i].dealer === callerForHand(g, i)', () => {
   let g = createGame({ players, firstDealer: 0, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
-  for (let i = 0; i < 5; i++) g = withHand(g, makeHand('koz', dealerForHand(g, i), [13, 0, 0, 0]));
+  for (let i = 0; i < 5; i++) g = withHand(g, makeHand('koz', callerForHand(g, i), [13, 0, 0, 0]));
   const g2 = withoutHand(g, 2);
   assert.equal(g2.hands.length, 4);
-  g2.hands.forEach((h, i) => assert.equal(h.dealer, dealerForHand(g2, i), `hand ${i}`));
+  g2.hands.forEach((h, i) => assert.equal(h.dealer, callerForHand(g2, i), `hand ${i}`));
   assert.deepEqual(quotaState(g2).kozLeft, [1, 1, 1, 1]);
-  assert.equal(currentDealer(g2), 0);
+  assert.equal(currentCaller(g2), 0);
 });
 
 test('noKozFirstRound applies even when quotas are off', () => {
@@ -303,18 +304,37 @@ test('summaryText reflects outcomes', () => {
   assert.match(summaryText(h), /Batanlar: Ayşe/);
 });
 
-// ---- dağıtan sırasını düzeltme ----
-import { withFirstDealer } from '../rules.js';
+// ---- söyleyen ve dağıtan: bir önceki eli söyleyen dağıtır, ondan sonraki söyler ----
+import { currentDealer, callerAfter, dealerBefore, withCurrentDealer } from '../rules.js';
 
-test('withFirstDealer re-stamps every hand and keeps the current dealer consistent', () => {
+test('the seat after the dealer calls, and both wrap around the table', () => {
+  assert.deepEqual([0, 1, 2, 3].map(callerAfter), [1, 2, 3, 0]);
+  assert.deepEqual([0, 1, 2, 3].map(dealerBefore), [3, 0, 1, 2]);
+});
+
+test('whoever called the last hand deals the next one', () => {
+  let g = createGame({ players, firstDealer: 3 }); // ilk eli Zeynep (3) söyler
+  assert.equal(currentDealer(g), 2, 'ilk eli, söyleyenden bir önceki koltuk dağıtır');
+  g = withHand(g, makeHand('el', 3, [13, 0, 0, 0]));
+  assert.equal(currentDealer(g), 3, '1. eli söyleyen Zeynep 2. eli dağıtır');
+  assert.equal(currentCaller(g), 0, 'ondan sonraki (Ali) söyler');
+  g = withHand(g, makeHand('kupa', 0, [13, 0, 0, 0]));
+  assert.equal(currentDealer(g), 0);
+  assert.equal(currentCaller(g), 1);
+});
+
+test('withCurrentDealer: the chosen seat deals the next hand and played hands are re-stamped to match', () => {
   let g = createGame({ players, firstDealer: 0, rules: { ...DEFAULT_RULES, enforceQuotas: false } });
   for (let i = 0; i < 3; i++) g = withHand(g, makeHand('el', i, [13, 0, 0, 0]));
-  // Masada şu an aslında Ali (0) dağıtıyormuş: 3 el oynandıysa ilk dağıtan 1 olmalı.
-  const fixed = withFirstDealer(g, (0 - 3 + 8) % 4);
+  // Uygulama "Mehmet (2) dağıtıyor, Zeynep (3) söylüyor" diyor; masada aslında Zeynep dağıtıyor, Ali (0) söylüyor.
+  const fixed = withCurrentDealer(g, 3);
+  assert.equal(currentDealer(fixed), 3);
+  assert.equal(currentCaller(fixed), 0);
   assert.equal(fixed.firstDealer, 1);
-  assert.equal(currentDealer(fixed), 0);
-  fixed.hands.forEach((h, i) => assert.equal(h.dealer, dealerForHand(fixed, i)));
+  assert.deepEqual(fixed.hands.map(h => h.dealer), [1, 2, 3], 'oynanan ellerin söyleyeni bir koltuk kayar');
+  assert.deepEqual(quotaState(fixed).cezaLeft, [3, 2, 2, 2], 'haklar yeni söyleyenlere göre');
   assert.deepEqual(g.hands.map(h => h.dealer), [0, 1, 2], 'original untouched');
+  assert.equal(g.firstDealer, 0);
 });
 
 test('isValidGame rejects hand types that are inherited object properties', () => {
@@ -323,4 +343,54 @@ test('isValidGame rejects hand types that are inherited object properties', () =
     assert.equal(isValidGame(g), false, type);
     assert.equal(validateCounts(type, [1, 0, 0, 0]).ok, false, type);
   }
+});
+
+// ---- çıkmak için gereken koz ----
+import { kozNeeded } from '../rules.js';
+
+test('kozNeeded: koz tricks each seat needs to climb back to zero, rounded up', () => {
+  let g = createGame({ players });
+  g = withHand(g, makeHand('el', 0, [5, 4, 4, 0]));     // -250, -200, -200, 0
+  g = withHand(g, makeHand('kupa', 1, [2, 0, 1, 10]));  // -60, 0, -30, -300
+  // toplam -310, -200, -230, -300 → 6,2 → 7 · tam 4 (sıfıra gelen çıkar) · 4,6 → 5 · tam 6
+  assert.deepEqual(kozNeeded(g), [7, 4, 5, 6]);
+});
+
+test('kozNeeded is 0 for a seat that is already at zero or above', () => {
+  let g = createGame({ players });
+  g = withHand(g, makeHand('el', 0, [13, 0, 0, 0]));  // -650, 0, 0, 0
+  g = withHand(g, makeHand('koz', 1, [5, 4, 4, 0]));  // +250, +200, +200, 0
+  assert.deepEqual(kozNeeded(g), [8, 0, 0, 0]);
+});
+
+test('kozNeeded follows the koz point value of the game', () => {
+  const custom = pts => ({ ...DEFAULT_RULES, pointsPer: { ...DEFAULT_RULES.pointsPer, koz: pts } });
+  const lost = g => withHand(g, makeHand('el', 0, [5, 0, 0, 8])); // -250, 0, 0, -400
+  assert.deepEqual(kozNeeded(lost(createGame({ players, rules: custom(100) }))), [3, 0, 0, 4]);
+  assert.deepEqual(kozNeeded(lost(createGame({ players, rules: custom(0) }))), [0, 0, 0, 0], 'koz puan getirmiyorsa yazılacak sayı yok');
+});
+
+// İki el almaz (Zeynep -1300), sonra herkes ikişer koz söyler: her kozda Zeynep 3 el alır (+150).
+function kozRunDown(rules, kozHands) {
+  let g = createGame({ players, rules });
+  g = withHand(g, makeHand('el', 0, [0, 0, 0, 13]));
+  g = withHand(g, makeHand('el', 1, [0, 0, 0, 13]));
+  for (let i = 0; i < kozHands; i++) g = withHand(g, makeHand('koz', (2 + i) % 4, [4, 3, 3, 3]));
+  return g;
+}
+
+test('kozNeeded stops counting once no koz hand is left to play', () => {
+  assert.deepEqual(kozNeeded(kozRunDown(DEFAULT_RULES, 7)), [0, 0, 0, 5], 'bir koz eli kaldı: -250 → 5');
+  assert.deepEqual(kozNeeded(kozRunDown(DEFAULT_RULES, 8)), [0, 0, 0, 0], 'sekiz koz da oynandı: Zeynep -100 ama alacak koz yok');
+  const free = { ...DEFAULT_RULES, enforceQuotas: false };
+  assert.deepEqual(kozNeeded(kozRunDown(free, 8)), [0, 0, 0, 2], 'haklar serbestse koz yine söylenebilir');
+});
+
+test('kozNeeded is all zeros once the game is over', () => {
+  const early = { ...kozRunDown(DEFAULT_RULES, 3), finishedAt: '2026-11-20T20:00:00.000Z' }; // erken bitirildi
+  assert.deepEqual(kozNeeded(early), [0, 0, 0, 0]);
+  let king = createGame({ players });
+  king = withHand(king, makeHand('el', 0, [0, 13, 0, 0]));
+  king = withHand(king, makeHand('koz', 1, [10, 3, 0, 0])); // Ali King yaptı: oyun bitti
+  assert.deepEqual(kozNeeded(king), [0, 0, 0, 0]);
 });

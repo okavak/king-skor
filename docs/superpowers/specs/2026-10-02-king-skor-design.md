@@ -241,3 +241,35 @@ radar grafikler, abonelik/paywall, reklam.
 
 Kullanıcı isteğiyle bölüm 3'teki "çoklu cihaz senkronu" ve bölüm 7'deki "ortak tablolar" artık kapsamda; A4 değişti:
 gruptayken biten oyunlar Cloudflare Worker + D1'deki ortak kayda da gider. Ayrıntılar: `2026-11-03-ortak-grup-design.md`.
+
+## 11. Söyleyen ve dağıtan ayrımı (2026-11-20, kullanıcı düzeltmesi)
+
+- Kural (kullanıcı): eli söyleyen (oynanacak eli seçen) ile kartı dağıtan ayrı kişilerdir. Bir eli söyleyen,
+  sonraki eli dağıtır; ondan sonraki oyuncu söyler. Bölüm 3'teki "Dağıtan oyuncu eli seçer" ve arayüzdeki
+  "dağıtan / dağıtıyor" etiketleri aslında söyleyeni anlatıyordu.
+- Kayıt değişmedi: `game.firstDealer` ve `hand.dealer` alanları söyleyen koltuğu tutmaya devam eder (eski oyunlar,
+  yedekler ve ortak grup kaydı uyumlu). Haklar ve "Kendi seçtiği eller" analizi zaten söyleyene göreydi.
+  Kodda söyleyen `callerForHand` / `currentCaller`, dağıtan `currentDealer` (söyleyenden bir önceki koltuk).
+- Tablo: söyleyenin satırında altın çizgi ve "söylüyor", bir önceki koltukta "dağıtıyor"; alt çubukta
+  "Ali dağıtıyor, Veli söylüyor". "X konuşuyor" yazıları "X söylüyor" oldu (kullanıcının sözcüğü).
+- Yeni oyun: "İlk dağıtan" artık gerçekten kartı dağıtanı seçer; bir sonraki koltuk ilk eli söyler
+  ("Ali dağıtacak, Veli söyleyecek"). Varsayılan ilk dağıtan her yeni oyunda bir koltuk ilerler.
+- "Dağıtan sırasını düzelt" gerçek dağıtanı sorar ve sırayı ona göre kurar (`withCurrentDealer`).
+- `tests/sw.test.js`: açılış modüllerinin içe aktardığı her adın gerçekten dışa aktarıldığı denetlenir
+  (adı değişen bir işlev app.js'de eski adıyla kalırsa uygulama hiç açılmaz).
+
+## 12. Çıkmak için gereken koz (2026-11-20, kullanıcı isteği)
+
+- İstek: ceza puanına göre oyuncunun kaç koz eli alırsa çıkacağı tabloda yazsın; tasarım bozulmasın.
+- Yaklaşımlar: (A) Basit görünümde puanın hemen altında küçük satır; (B) adın altındaki "dağıtıyor / söylüyor"
+  satırına ekleme (o satır kalabalıklaşıyor); (C) oyuncu panelinin altında ayrı şerit (adlar tekrar eder, yer kaplar).
+  Kullanıcı A'yı seçti. Koşulu: toplam puan yazısı küçülmeyecek.
+- Hesap (`kozNeeded`): ekside olan oyuncu için `−toplam / koz puanı`, yukarı yuvarlanır (−210 → 5; −200 → 4, çünkü
+  sıfıra gelen çıkar). Sayı yazılmaz: oyuncu ekside değilse, oyun bittiyse, oynanacak koz eli kalmadıysa (haklar
+  serbestken koz her zaman söylenebilir sayılır) ya da koz puanı 0 veya eksiyse.
+- Basit: puanın altında "5 kozla çıkar" (13 px, kalın, `--ink-2`; iki temada da 7:1 üstü kontrast). Puan 28 px'te
+  kalır. Satır dolgusu 14 → 11 px yapıldı; böylece oyuncu satırı 70 px'te kalır ve altındaki bölümler kaymaz.
+- Detaylı: Toplam satırının altında, onunla birlikte sabit duran "Çıkmak için" satırı ("5 koz", gerekmeyende "–").
+  Hiçbir oyuncu için sayı yoksa satır çizilmez.
+- Dar ekran: ad hücresi daralabilir (`.player-row .who { min-width: 0 }`); uzun ad "…" ile kısalır, puan sütunu
+  yerinde kalır (320 px genişlikte denendi).

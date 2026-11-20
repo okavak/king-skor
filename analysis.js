@@ -9,7 +9,7 @@ export const MIN_TYPE_HANDS = 3;   // "en çok zorlandığın" için bir türde 
 export const FAIR_SHARE = 0.25;    // dört oyuncuda adil pay
 
 // Oyun başına özet: koltuk başına toplam, sonuç, King sayısı, tür başına [el, alınan birim, puan] ve
-// dağıtanın seçtiği eller: ch (ceza) / kh (koz) = [kendi seçtiği el, pay toplamı, başkasının seçtiği el, pay toplamı].
+// eli söyleyenin seçtiği eller (kayıtta hand.dealer = söyleyen): ch (ceza) / kh (koz) = [kendi seçtiği el, pay toplamı, başkasının seçtiği el, pay toplamı].
 export function summarizeGame(game) {
   const totals = gameTotals(game);
   const { bySeat } = outcomes(game);

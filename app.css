@@ -87,9 +87,10 @@ input { font: inherit; color: inherit; }
 
 /* oyuncu satırları (Basit görünüm) */
 .players { display: flex; flex-direction: column; }
-.player-row { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 12px; padding: 14px 16px; min-height: 70px; position: relative; }
+.player-row { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 12px; padding: 11px 16px; min-height: 70px; position: relative; }
 .player-row + .player-row { border-top: 1px solid var(--line); }
-.player-row.dealer::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 4px 4px 0; background: var(--gold-line); }
+.player-row .who { min-width: 0; } /* uzun ad kısalır; puan sütununu sağa itmez */
+.player-row.caller::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 4px 4px 0; background: var(--gold-line); }
 .rights { display: grid; grid-template-columns: repeat(3, 17px); gap: 3px 3px; }
 .ri { width: 17px; height: 17px; display: block; fill: none; stroke-width: 1.8; stroke-linejoin: round; }
 .ri.koz { stroke: var(--gold-line); }
@@ -99,6 +100,10 @@ input { font: inherit; color: inherit; }
 .player-name { font-weight: 600; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .player-sub { font-size: 13px; color: var(--muted); display: block; }
 .total { font-size: 28px; line-height: 1; text-align: right; }
+/* puanın altında "5 kozla çıkar": puanın boyu değişmez. Puan 28 + boşluk 5 + bu satır 13 = 46 px; satır dolgusu 11 px
+   olduğu için (üst çizgiyle birlikte 47 px yer) oyuncu satırı 70 px'te kalır, tablo aşağı kaymaz. */
+.score { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.total-sub { font-size: 13px; font-weight: 600; line-height: 1; color: var(--ink-2); white-space: nowrap; }
 .neg { color: var(--red); }
 .pos { color: var(--green); }
 .zero { color: var(--muted); }
@@ -127,10 +132,12 @@ input { font: inherit; color: inherit; }
 .grid .cell { padding: 8px 4px; text-align: center; border-bottom: 1px solid var(--line); min-height: 44px; display: flex; align-items: center; justify-content: center; }
 .grid .head { font-weight: 600; font-size: 12px; color: var(--muted); display: block; line-height: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
 .grid .label { justify-content: flex-start; gap: 6px; padding-left: 8px; font-size: 12px; color: var(--ink-2); text-align: left; }
-.grid .cell.dealer { background: var(--gold-soft); }
+.grid .cell.caller { background: var(--gold-soft); }
 .grid.totals { position: sticky; bottom: calc(100px + env(safe-area-inset-bottom)); background: var(--surface); border-radius: 0 0 var(--radius) var(--radius); }
 .grid.totals .cell { border-bottom: 0; border-top: 2px solid var(--line); font-size: 16px; min-height: 48px; }
 .grid.totals .label { font-weight: 600; }
+.grid.totals .cell.need { border-top: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--ink-2); min-height: 36px; }
+.grid.totals .label.need { font-size: 12px; font-weight: 500; }
 .readonly .grid.totals { bottom: 0; }
 
 .segmented { display: inline-grid; grid-auto-flow: column; background: var(--surface-2); border-radius: 10px; padding: 3px; margin: 4px auto 12px; }
