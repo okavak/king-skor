@@ -1,5 +1,5 @@
 // roster.js — kayıtlı oyuncu listesi ve koltuk seçimi için saf yardımcılar.
-import { nameKey } from './names.js';
+import { nameKey, resolveAlias } from './names.js';
 
 export const SEATS = 4;
 export const ROSTER_CAP = 50;
@@ -38,4 +38,12 @@ export function ensureInRoster(roster, names) {
   let r = roster;
   for (const n of names) r = addToRoster(r, n).roster;
   return r;
+}
+
+// Şaka avansı: anahtarı `exemptKey` olan oyuncu masadaysa onun dışındaki her koltuğa `points`; masada değilse null.
+// Grupta birleştirilmiş adlar (aliases) çözülür: farklı yazılmış aynı kişi de tanınır.
+export function avansExcept(players, exemptKey, points, aliases = {}) {
+  const root = resolveAlias(exemptKey, aliases);
+  const exempt = players.map(p => resolveAlias(nameKeyOf(p), aliases) === root);
+  return exempt.some(Boolean) ? exempt.map(x => (x ? 0 : points)) : null;
 }

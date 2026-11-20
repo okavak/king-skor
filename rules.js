@@ -127,8 +127,23 @@ export function withCurrentDealer(game, dealer) {
   return next;
 }
 
+// Avans: oyun başında koltuk başına verilen puan (şaka amaçlı "Başbuğ avansı"; kimin alacağına arayüz karar verir).
+// Kayıtta isteğe bağlı `game.avans` dizisidir; yoksa herkes sıfırdan başlar.
+const MAX_AVANS = 10000; // kayıt doğrulaması için üst sınır
+
+export function gameAvans(game) {
+  return Array.isArray(game.avans) ? [...game.avans] : new Array(PLAYER_COUNT).fill(0);
+}
+
+// Avansı ayarlar; null verilirse alanı kayıttan kaldırır.
+export function withAvans(game, avans) {
+  const { avans: _dropped, ...rest } = game;
+  return avans ? { ...rest, avans: [...avans] } : rest;
+}
+
+// Masadaki toplam: avans + oynanan eller.
 export function gameTotals(game) {
-  const totals = new Array(PLAYER_COUNT).fill(0);
+  const totals = gameAvans(game);
   for (const h of game.hands) handScores(h, game.rules).forEach((s, i) => { totals[i] += s; });
   return totals;
 }
@@ -244,6 +259,8 @@ export function isValidGame(obj) {
   if (!Number.isInteger(obj.firstDealer) || obj.firstDealer < 0 || obj.firstDealer >= PLAYER_COUNT) return false;
   if (!obj.rules || typeof obj.rules.pointsPer !== 'object') return false;
   if (!Array.isArray(obj.hands)) return false;
+  if (obj.avans !== undefined && !(Array.isArray(obj.avans) && obj.avans.length === PLAYER_COUNT
+    && obj.avans.every(a => Number.isInteger(a) && a >= 0 && a <= MAX_AVANS))) return false;
   return obj.hands.every(h => h && isHandType(h.type)
     && Number.isInteger(h.dealer) && h.dealer >= 0 && h.dealer < PLAYER_COUNT
     && validateCounts(h.type, h.counts).ok);

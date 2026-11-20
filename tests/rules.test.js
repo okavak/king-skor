@@ -394,3 +394,41 @@ test('kozNeeded is all zeros once the game is over', () => {
   king = withHand(king, makeHand('koz', 1, [10, 3, 0, 0])); // Ali King yaptı: oyun bitti
   assert.deepEqual(kozNeeded(king), [0, 0, 0, 0]);
 });
+
+// ---- avans: oyun başında koltuk başına verilen puan ("Başbuğ avansı" şakası) ----
+import { gameAvans, withAvans } from '../rules.js';
+
+test('gameTotals starts every seat from its avans', () => {
+  let g = createGame({ players });
+  g = withHand(g, makeHand('el', 0, [5, 3, 5, 0])); // -250, -150, -250, 0
+  assert.deepEqual(gameTotals(withAvans(g, [100, 100, 0, 100])), [-150, -50, -250, 100]);
+  assert.deepEqual(gameTotals(g), [-250, -150, -250, 0], 'avans yoksa toplam değişmez');
+});
+
+test('withAvans sets and removes the avans without touching the original game', () => {
+  const g = createGame({ players });
+  const on = withAvans(g, [100, 100, 0, 100]);
+  assert.deepEqual(gameAvans(on), [100, 100, 0, 100]);
+  assert.deepEqual(gameAvans(g), [0, 0, 0, 0], 'original untouched; avans yoksa sıfırlar');
+  const off = withAvans(on, null);
+  assert.deepEqual(gameAvans(off), [0, 0, 0, 0]);
+  assert.equal('avans' in off, false, 'kapatılınca alan kayıttan kalkar');
+  assert.deepEqual(gameAvans(on), [100, 100, 0, 100], 'kapatmak açık kopyayı değiştirmez');
+});
+
+test('avans counts toward who gets out and how many koz are still needed', () => {
+  let g = createGame({ players });
+  g = withHand(g, makeHand('el', 0, [1, 5, 4, 3])); // -50, -250, -200, -150
+  assert.deepEqual(outcomes(g).bySeat, ['sunk', 'sunk', 'sunk', 'sunk']);
+  const on = withAvans(g, [100, 100, 0, 100]);       // 50, -150, -200, -50
+  assert.deepEqual(outcomes(on).bySeat, ['out', 'sunk', 'sunk', 'sunk']);
+  assert.deepEqual(kozNeeded(on), [0, 3, 4, 1]);
+});
+
+test('isValidGame accepts a well-formed avans and rejects a malformed one', () => {
+  const g = createGame({ players });
+  assert.equal(isValidGame({ ...g, avans: [100, 100, 0, 100] }), true);
+  for (const bad of [[100, 100, 0], [100, 100, 0, 100, 100], [100, 100, 0, 1.5], [100, 100, 0, -100], [100, 100, 0, '100'], [100, 100, 0, 1e9], 'evet', { 0: 100 }]) {
+    assert.equal(isValidGame({ ...g, avans: bad }), false, JSON.stringify(bad));
+  }
+});

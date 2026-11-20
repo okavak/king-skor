@@ -19,6 +19,9 @@ Android: Chrome menüsü → "Ana ekrana ekle" / "Uygulamayı yükle".
   2 kez, oyuncu başına 3 ceza + 2 koz). Sayıları −/+ ile girin, "Kalanı ver" ile tamamlayın.
 - **Kaç kozla çıkar**: ekside olan oyuncunun puanının altında, çıkmak için kaç koz eli alması gerektiği yazar
   ("5 kozla çıkar"); Detaylı görünümde Toplam satırının altındaki "Çıkmak için" satırında durur.
+- **Başbuğ avansı (şaka)**: Başbuğ'un oynadığı oyunlarda tablonun altında yüzü ve bir açma kapama düğmesi çıkar.
+  Açıkken Başbuğ dışındaki üç oyuncunun puanına 100 eklenir; Detaylı görünümde ve paylaşımlarda "Avans" olarak
+  görünür. Sıralama ve karne gerçek puanla hesaplanır.
 - **Oyun bitti**: sonucu paylaşın, aynı oyuncularla yeni oyun açın ya da "Son eli düzelt" ile son eli değiştirin.
 - **Yanlış kaydı düzeltme**: kaydettikten hemen sonra bildirimdeki "Geri al"; Basit görünümde "Düzenle";
   Detaylı görünümde satıra dokunun; sayı girerken değere dokununca 0–13 hızlı seçim şeridi açılır; menüde

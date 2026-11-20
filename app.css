@@ -127,6 +127,15 @@ input { font: inherit; color: inherit; }
 .remaining .name { font-size: 14px; font-weight: 600; line-height: 1.25; color: var(--ink-2); }
 .remaining .done { grid-column: 1 / -1; font-size: 14px; color: var(--muted); }
 
+/* Başbuğ avansı (şaka): kalanlar şeridinin altında yüz + açma kapama. Yalnızca Başbuğ'un oynadığı oyunda çizilir. */
+.avans { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-top: 18px; padding: 10px 14px 10px 10px; }
+.avans .t { display: block; font-weight: 600; font-size: 15px; }
+.avans .d { display: block; font-size: 13px; color: var(--muted); }
+.face { display: block; flex: none; border-radius: 50%; object-fit: cover; background: var(--card); }
+.avans .face { box-shadow: 0 0 0 2px var(--line); filter: grayscale(1); opacity: .7; } /* kapalı: soluk */
+.avans.on .face { box-shadow: 0 0 0 2px var(--gold-line); filter: none; opacity: 1; }  /* açık: renkli, altın halka */
+.switch[disabled] { opacity: .6; cursor: default; }
+
 /* detaylı tablo */
 .grid { display: grid; grid-template-columns: 84px repeat(4, 1fr); font-size: 14px; }
 .grid .cell { padding: 8px 4px; text-align: center; border-bottom: 1px solid var(--line); min-height: 44px; display: flex; align-items: center; justify-content: center; }

@@ -1,6 +1,6 @@
 // analysis.js — grup analizi: sıralama ve kişisel ceza karnesi. Saf fonksiyonlar; uygulama ve sunucu aynı kodu kullanır.
 // Sunucu her oyunun küçük bir özetini (summarizeGame) saklar ve analizi özetlerden hesaplar (aggregate).
-import { HAND_TYPES, TYPE_BY_ID, DEFAULT_RULES, gameTotals, handScores, outcomes, isValidGame } from './rules.js';
+import { HAND_TYPES, TYPE_BY_ID, DEFAULT_RULES, gameTotals, handScores, outcomes, isValidGame, withAvans } from './rules.js';
 import { nameKey, resolveAlias } from './names.js';
 
 export const SUMMARY_VERSION = 2; // 2: kendi seçtiği / başkasının seçtiği eller (ch, kh)
@@ -11,8 +11,10 @@ export const FAIR_SHARE = 0.25;    // dört oyuncuda adil pay
 // Oyun başına özet: koltuk başına toplam, sonuç, King sayısı, tür başına [el, alınan birim, puan] ve
 // eli söyleyenin seçtiği eller (kayıtta hand.dealer = söyleyen): ch (ceza) / kh (koz) = [kendi seçtiği el, pay toplamı, başkasının seçtiği el, pay toplamı].
 export function summarizeGame(game) {
-  const totals = gameTotals(game);
-  const { bySeat } = outcomes(game);
+  // Sıralama ve karne gerçek puanla hesaplanır: şaka avansı (game.avans) masada görünür ama buraya sayılmaz.
+  const real = withAvans(game, null);
+  const totals = gameTotals(real);
+  const { bySeat } = outcomes(real);
   const threshold = game.rules.kingThreshold ?? DEFAULT_RULES.kingThreshold;
   const seats = game.players.map((name, i) => ({
     name: String(name).trim(), key: nameKey(name), total: totals[i], outcome: bySeat[i], kings: 0, t: {}, ch: [0, 0, 0, 0], kh: [0, 0, 0, 0],

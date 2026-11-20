@@ -6,7 +6,7 @@ const CACHE = `king-skor-${VERSION}`;
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './rules.js', './store.js', './roster.js', './names.js', './analysis.js', './groupcode.js', './group.js', './config.js', './version.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
-  './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
+  './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png', './icons/basbug.webp',
 ];
 
 self.addEventListener('install', event => {

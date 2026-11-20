@@ -43,3 +43,22 @@ test('roster treats Turkish-letter and case variants as the same player', () => 
   assert.deepEqual(toggleSeat(['Çağrı'], 'cagri'), []);
   assert.equal(seatOf(['Ali', 'Işıl'], 'ISIL'), 2);
 });
+
+// ---- şaka avansı: belirli bir oyuncu masadaysa onun dışındaki herkese puan ----
+import { avansExcept } from '../roster.js';
+
+test('avansExcept gives the points to everyone but the named player, whatever the spelling', () => {
+  assert.deepEqual(avansExcept(['Atakan', 'Başbuğ', 'Samet', 'Onur'], 'basbug', 100), [100, 0, 100, 100]);
+  assert.deepEqual(avansExcept(['Atakan', 'Ozan', 'Samet', ' BASBUG '], 'basbug', 100), [100, 100, 100, 0]);
+});
+
+test('avansExcept is null when the named player is not at the table', () => {
+  assert.equal(avansExcept(['Atakan', 'Ozan', 'Samet', 'Onur'], 'basbug', 100), null);
+});
+
+test('avansExcept follows names merged in the group', () => {
+  // Grupta "Reis" yazımı Başbuğ ile birleştirilmiş.
+  assert.deepEqual(avansExcept(['Reis', 'Ozan', 'Samet', 'Onur'], 'basbug', 100, { reis: 'basbug' }), [0, 100, 100, 100]);
+  // Tersi: resmi kayıt başka bir köke bağlanmışsa da aynı kişi.
+  assert.deepEqual(avansExcept(['Reis', 'Ozan', 'Samet', 'Onur'], 'basbug', 100, { basbug: 'reis' }), [0, 100, 100, 100]);
+});

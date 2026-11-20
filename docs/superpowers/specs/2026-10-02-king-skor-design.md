@@ -273,3 +273,26 @@ gruptayken biten oyunlar Cloudflare Worker + D1'deki ortak kayda da gider. Ayrı
   Hiçbir oyuncu için sayı yoksa satır çizilmez.
 - Dar ekran: ad hücresi daralabilir (`.player-row .who { min-width: 0 }`); uzun ad "…" ile kısalır, puan sütunu
   yerinde kalır (320 px genişlikte denendi).
+
+## 13. Başbuğ avansı (2026-11-20, kullanıcı isteği; şaka)
+
+- İstek (kullanıcı): tabloda kalanlar şeridinin altına Başbuğ'un karikatürü küçük bir ikon olarak gelsin; yanında bir
+  açma kapama düğmesi olsun. Düğme yalnızca Başbuğ'un oynadığı oyunlarda etkin; açıkken Başbuğ dışındaki herkese
+  100 puan avans. "Tamamen espri olsun diye."
+- Kayıt: isteğe bağlı `game.avans` (koltuk başına puan, ör. `[100, 0, 100, 100]`). `gameTotals` avansla başlar; bu
+  yüzden masadaki her şey (toplamlar, çıktı/battı, "kozla çıkar", bitiş ekranı, paylaşım, sesli okuma) avansı içerir.
+  Kural motoru kişi adı bilmez: kimin alacağını arayüz belirler (`avansExcept`, `config.js` içindeki `BASBUG`).
+- Başbuğ'u tanıma: ad anahtarı (`basbug`; büyük/küçük harf ve Türkçe karakter farkı yok) ve grupta birleştirilmiş
+  yazımlar (önbellekteki `aliases`).
+- Sıralama ve karne (yaklaşımlar): (A) avans her yerde sayılır: tek tutarlı puan, ama şaka ortak sıralamayı kalıcı
+  olarak kaydırır ve sunucunun da güncellenmesi gerekir; (B) avans masada ve o oyunun sonucunda sayılır, sıralama ve
+  karne gerçek puanla kalır: sunucu değişmez. **Kullanıcı B'yi seçti ("sıralamaya sayılmasın")**:
+  `summarizeGame` avansı çıkarıp hesaplar; bitiş ekranı "sıralamaya ve karneye gerçek puanlar yazılır" diye not düşer.
+- Tablo: kalanlar şeridinin altında kart (44 px yuvarlak yüz, "Başbuğ avansı / Diğer üç oyuncuya +100", düğme).
+  Kapalıyken yüz soluk ve gri, açıkken renkli ve altın halkalı. Başbuğ masada değilse kart hiç çizilmez (Claude'un
+  kararı). Geçmişten açılan oyunda yalnızca avans açık bittiyse, dokunulamayan düğmeyle görünür.
+- Detaylı görünümde ve paylaşım görselinde ellerin üstünde "Avans" satırı; paylaşım metnine bir satır eklenir.
+  Bitiş ekranındaki toplam denetimi avansı bekler ("Toplam 300: 300 puanı Başbuğ avansı, hesap tutuyor.").
+- Avans oyuna özeldir: yeni oyunda kapalı başlar, oyun sürerken açılıp kapatılabilir.
+- Görsel: `icons/basbug.webp` (144 px, karikatürden yüz kırpması). `sw.js` önbellek listesinde; `tests/sw.test.js`
+  artık kodda adı geçen yerel görsellerin de listede olmasını ister.

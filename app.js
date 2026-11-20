@@ -3,16 +3,16 @@ import {
   HAND_TYPES, TYPE_BY_ID, SUITS, PLAYER_COUNT, DEFAULT_RULES, cloneRules, handsTotal, createGame, makeHand,
   handScores, validateCounts, formatPoints, callerForHand, currentCaller, currentDealer, callerAfter, gameTotals, quotaState, availableTypes,
   isFinished, withHand, withHandReplaced, withoutHand, standings, summaryText, speechText, expectedGameTotal,
-  kingSeat, outcomes, withCurrentDealer, kozNeeded,
+  kingSeat, outcomes, withCurrentDealer, kozNeeded, gameAvans, withAvans,
 } from './rules.js';
 import { createStore } from './store.js';
 import { analyze, MIN_RANKED_GAMES, FAIR_SHARE } from './analysis.js';
 import { nameKey, resolveAlias } from './names.js';
-import { toggleSeat, seatOf, addToRoster, removeFromRoster, ensureInRoster, nameKeyOf } from './roster.js';
+import { toggleSeat, seatOf, addToRoster, removeFromRoster, ensureInRoster, nameKeyOf, avansExcept } from './roster.js';
 import { APP_VERSION } from './version.js';
 import { createGroupClient } from './group.js';
 import { formatCode, inviteText } from './groupcode.js';
-import { API_BASE, INVITE } from './config.js';
+import { API_BASE, INVITE, BASBUG } from './config.js';
 
 // ---------- depolama ----------
 function safeStorage() {
@@ -428,6 +428,25 @@ document.addEventListener('input', e => {
   }
 });
 
+// ---------- Başbuğ avansı (şaka) ----------
+// Başbuğ masadaysa onun dışındaki herkese verilecek avans; masada değilse null. Grupta birleştirilmiş yazımlar da tanınır.
+const basbugAvans = g => avansExcept(g.players, nameKey(BASBUG.name), BASBUG.avans, group.cached()?.aliases || {});
+const hasAvans = g => gameAvans(g).some(Boolean);
+const basbugFace = (size, extra = '') => `<img class="face${extra}" src="${BASBUG.icon}" alt="" width="${size}" height="${size}">`;
+
+// Kalanlar şeridinin altındaki kart: yüz + açma kapama. Yalnızca Başbuğ'un oynadığı oyunda görünür;
+// geçmişte açılan oyunda yalnızca avans açık bittiyse, dokunulamayan düğmeyle.
+function avansCard(g, readOnly) {
+  const on = hasAvans(g);
+  if (!on && (readOnly || !basbugAvans(g))) return '';
+  const name = esc(BASBUG.name);
+  return `<div class="panel avans${on ? ' on' : ''}">
+    ${basbugFace(44)}
+    <span class="avans-text"><span class="t">${name} avansı</span><span class="d">Diğer üç oyuncuya +${BASBUG.avans}</span></span>
+    <button class="switch" role="switch" aria-checked="${on}" data-action="avans-toggle" aria-label="${name} avansı"${readOnly ? ' disabled' : ''}></button>
+  </div>`;
+}
+
 // ---------- oyun tablosu ----------
 function lastHandLine(g, readOnly) {
   const idx = g.hands.length - 1;
@@ -476,12 +495,15 @@ views.board = () => {
       ${sc.map((s, i) => `<span class="cell num ${cls(s)}${i === h.dealer ? ' caller' : ''}">${s === 0 ? '–' : formatPoints(s)}</span>`).join('')}
     </div>`;
   }).join('');
+  const avans = gameAvans(g);
+  const avansRow = avans.some(Boolean)
+    ? `<span class="cell label">${basbugFace(22, ' sm')}<span>Avans</span></span>${avans.map(a => `<span class="cell num ${cls(a)}">${a ? formatPoints(a) : '–'}</span>`).join('')}` : '';
   const needRow = need.some(Boolean)
     ? `<span class="cell label need">Çıkmak için</span>${need.map(n => `<span class="cell need">${n ? `${n} koz` : '–'}</span>`).join('')}` : '';
   const detail = `<div class="panel">
     <div class="grid">
       <span class="cell head"></span>${g.players.map(n => `<span class="cell head" title="${esc(n)}">${esc(n)}</span>`).join('')}
-      ${rows || '<span class="cell label" style="grid-column:1/-1;justify-content:center;color:var(--muted)">Henüz el oynanmadı</span>'}
+      ${avansRow}${rows || '<span class="cell label" style="grid-column:1/-1;justify-content:center;color:var(--muted)">Henüz el oynanmadı</span>'}
     </div>
     <div class="grid totals"><span class="cell label">Toplam</span>${totals.map(t => `<span class="cell num ${cls(t)}">${formatPoints(t)}</span>`).join('')}${needRow}</div>
   </div>`;
@@ -510,6 +532,7 @@ views.board = () => {
     <button aria-pressed="${state.boardMode === 'detail'}" data-action="board-mode" data-mode="detail">Detaylı</button></div></div>
   ${state.boardMode === 'simple' ? simple : detail}
   ${remaining}
+  ${avansCard(g, readOnly)}
 </div>
 ${!readOnly && !done ? `<div class="bottom-bar"><div class="inner"><button class="btn btn-primary btn-block" data-action="open-sheet">El ekle</button><span class="who">${esc(turnLine(g.players, dealer))}</span></div></div>` : ''}`;
 };
@@ -590,7 +613,8 @@ views.finish = () => {
   const outs = g.players.filter((_, i) => o.bySeat[i] === 'out');
   const sunk = g.players.filter((_, i) => o.bySeat[i] === 'sunk');
   const sum = totals.reduce((a, b) => a + b, 0);
-  const expected = expectedGameTotal(g.rules);
+  const avansSum = gameAvans(g).reduce((a, b) => a + b, 0);
+  const expected = expectedGameTotal(g.rules) + avansSum;
   const full = g.hands.length >= handsTotal(g.rules);
   let hero;
   if (k) {
@@ -603,7 +627,7 @@ views.finish = () => {
   }
   const check = k ? `${g.hands.length}. elde King ile bitti.`
     : !full ? `${g.hands.length} el oynandı, oyun erken bitirildi.`
-      : sum === expected ? `Toplam ${sum}, hesap tutuyor.`
+      : sum === expected ? (avansSum ? `Toplam ${sum}: ${avansSum} puanı ${BASBUG.name} avansı, hesap tutuyor.` : `Toplam ${sum}, hesap tutuyor.`)
         : `Toplam ${sum}, beklenen ${expected}: bir el eksik ya da hatalı girilmiş olabilir.`;
   return `<div class="screen">
   <header class="topbar"><span></span><h1>${k ? 'King!' : 'Oyun bitti'}</h1><span></span></header>
@@ -613,6 +637,7 @@ views.finish = () => {
     <span class="name">${esc(g.players[seat])} ${outcomeTag(o.bySeat[seat])}</span>
     <span class="total num ${cls(totals[seat])}">${formatPoints(totals[seat])}</span></div>`).join('')}</div>
   <p class="check${!k && full && sum !== expected ? ' bad' : ''}">${esc(check)}</p>
+  ${avansSum ? `<p class="check">${esc(BASBUG.name)} avansı şaka: sıralamaya ve karneye gerçek puanlar yazılır.</p>` : ''}
   <div class="stack">
     <button class="btn btn-primary btn-block" data-action="share-image">Tabloyu görsel paylaş</button>
     <button class="btn btn-block" data-action="share">Metin olarak paylaş</button>
@@ -682,6 +707,16 @@ Object.assign(actions, {
     sh.counts[i] = Math.max(0, Math.min(Number(value), TYPE_BY_ID[sh.type].total - others));
     sh.pickFor = null;
     renderSheet();
+  },
+  'avans-toggle'() {
+    const g = state.game;
+    if (!g || state.viewGame) return;
+    const next = hasAvans(g) ? null : basbugAvans(g);
+    if (!next && !hasAvans(g)) return;
+    state.game = withAvans(g, next);
+    persist();
+    render();
+    toast(next ? `${BASBUG.name} avansı açık: diğer üç oyuncuya +${BASBUG.avans}` : `${BASBUG.name} avansı kapatıldı`);
   },
   async 'fix-dealer'() {
     state.menuOpen = false;
@@ -1093,7 +1128,9 @@ function renderScoreCanvas(g) {
   const rowH = 46;
   const top = 168;
   const rows = g.hands.length;
-  const H = top + rowH * (rows + 1) + 96;
+  const avans = gameAvans(g);
+  const lead = avans.some(Boolean) ? 1 : 0; // ellerden önce bir avans satırı
+  const H = top + rowH * (rows + lead + 1) + 96;
   const scale = 2;
   const c = document.createElement('canvas');
   c.width = W * scale;
@@ -1121,9 +1158,16 @@ function renderScoreCanvas(g) {
   g.players.forEach((n, i) => x.fillText(n.length > 12 ? `${n.slice(0, 11)}…` : n, colRight(i), top - 14));
   x.textAlign = 'left';
   const totals = gameTotals(g);
+  if (lead) {
+    x.fillStyle = 'rgba(255,255,255,.035)'; x.fillRect(24, top, W - 48, rowH);
+    x.fillStyle = INK; x.font = font(500, 15); x.fillText(`${BASBUG.name} avansı`, 32, top + 29);
+    x.textAlign = 'right'; x.font = font(700, 17);
+    avans.forEach((a, i) => { x.fillStyle = a > 0 ? GREEN : MUTED; x.fillText(a ? String(a) : '–', colRight(i) - 10, top + 30); });
+    x.textAlign = 'left';
+  }
   g.hands.forEach((h, idx) => {
-    const y = top + idx * rowH;
-    if (idx % 2 === 0) { x.fillStyle = 'rgba(255,255,255,.035)'; x.fillRect(24, y, W - 48, rowH); }
+    const y = top + (idx + lead) * rowH;
+    if ((idx + lead) % 2 === 0) { x.fillStyle = 'rgba(255,255,255,.035)'; x.fillRect(24, y, W - 48, rowH); }
     x.fillStyle = 'rgba(233,185,73,.10)'; x.fillRect(colRight(h.dealer) - colW + 8, y, colW - 8, rowH);
     x.fillStyle = INK; x.font = font(500, 15);
     x.fillText(`${idx + 1}. ${TYPE_BY_ID[h.type].short}${h.trumpSuit ? ` ${SUITS[h.trumpSuit]}` : ''}`, 32, y + 29);
@@ -1134,7 +1178,7 @@ function renderScoreCanvas(g) {
     });
     x.textAlign = 'left';
   });
-  const ty = top + rows * rowH;
+  const ty = top + (rows + lead) * rowH;
   x.fillStyle = LINE; x.fillRect(24, ty, W - 48, 2);
   x.fillStyle = INK; x.font = font(700, 17); x.fillText('Toplam', 32, ty + 31);
   x.textAlign = 'right'; x.font = font(800, 20);
@@ -1214,7 +1258,7 @@ Object.assign(actions, {
     state.menuOpen = false;
     render();
     const g = state.view === 'finish' ? state.finishedGame : activeGame();
-    if (g) share(summaryText(g));
+    if (g) share(summaryText(g) + (hasAvans(g) ? `\n${BASBUG.name} avansı dahil: ${BASBUG.name} dışındaki herkese +${BASBUG.avans}` : ''));
   },
   'share-image'() {
     state.menuOpen = false;

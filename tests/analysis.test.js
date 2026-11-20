@@ -202,3 +202,14 @@ test('members: official spelling wins, members without games come last, others a
   assert.equal(a.games, 1);
 });
 
+// ---- avans (şaka) sıralamaya ve karneye girmez ----
+import { withAvans, outcomes as tableOutcomes, gameTotals as tableTotals } from '../rules.js';
+
+test('summarizeGame ignores the avans: ranking and karne use the real points', () => {
+  const g = withAvans(gameOf(players, [['el', [1, 5, 4, 3]]]), [100, 100, 0, 100]); // gerçek: -50, -250, -200, -150
+  assert.deepEqual(tableTotals(g), [50, -150, -200, -50], 'masada avanslı puan görünür');
+  assert.equal(tableOutcomes(g).bySeat[0], 'out', 'masada Ali avansla çıkmış görünür');
+  const s = summarizeGame(g);
+  assert.deepEqual(s.seats.map(x => x.total), [-50, -250, -200, -150]);
+  assert.deepEqual(s.seats.map(x => x.outcome), ['sunk', 'sunk', 'sunk', 'sunk']);
+});

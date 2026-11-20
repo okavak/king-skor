@@ -16,6 +16,7 @@ function precacheList() {
 
 const STATIC_IMPORT = /^\s*(?:import|export)\b[^'"`;]*?['"](\.{1,2}\/[^'"]+)['"]/gm;
 const DYNAMIC_IMPORT = /\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g;
+const LOCAL_IMAGE = /['"`](\.\/[^'"`\s]+\.(?:png|jpe?g|webp|svg|gif|avif))['"`]/g;
 
 function moduleGraph(entries) {
   const seen = new Set();
@@ -37,7 +38,11 @@ function startupFiles() {
   const html = read(page);
   const refs = [...html.matchAll(/\b(?:src|href)="(\.{1,2}\/[^"#?]+)"/g)].map(m => new URL(m[1], page));
   const files = new Set(['./', './index.html', ...refs.map(rel)]);
-  for (const m of moduleGraph(refs.filter(u => u.pathname.endsWith('.js')))) files.add(m);
+  for (const m of moduleGraph(refs.filter(u => u.pathname.endsWith('.js')))) {
+    files.add(m);
+    // Kodda adı geçen yerel görseller (ör. './icons/x.webp') sayfaya eklenince istenir; onlar da önbellekte olmalı.
+    for (const [, spec] of read(new URL(m, root)).matchAll(LOCAL_IMAGE)) files.add(rel(new URL(spec, page)));
+  }
   const manifestUrl = new URL(html.match(/<link rel="manifest" href="([^"]+)"/)[1], page);
   const manifest = JSON.parse(read(manifestUrl));
   files.add(rel(new URL(manifest.start_url, manifestUrl)));
